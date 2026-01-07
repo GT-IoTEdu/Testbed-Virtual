@@ -1,0 +1,12 @@
+<h2>Usuário autenticado via SAML2</h2>
+<ul>
+{% for k, v in request.user.__dict__.items %}
+  <li><b>{{ k }}</b>: {{ v }}</li>
+{% endfor %}
+</ul>
+<h3>Meta (atributos SAML e HTTP)</h3>
+<ul>
+{% for k, v in meta.items %}
+  <li><b>{{ k }}</b>: {{ v }}</li>
+{% endfor %}
+</ul> 

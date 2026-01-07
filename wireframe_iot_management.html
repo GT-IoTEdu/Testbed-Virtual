@@ -1,0 +1,1238 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT-EDU - Gerenciamento de Dispositivos</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+        }
+        
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .sidebar {
+            width: 250px;
+            background: #1e293b;
+            height: calc(100vh - 80px);
+            position: fixed;
+            left: 0;
+            top: 80px;
+            box-shadow: 2px 0 10px rgba(0,0,0,0.3);
+            padding: 2rem 0;
+        }
+        
+        .nav-item {
+            padding: 1rem 2rem;
+            cursor: pointer;
+            transition: background 0.3s;
+            border-left: 4px solid transparent;
+        }
+        
+        .nav-item:hover {
+            background: #334155;
+            border-left-color: #06b6d4;
+        }
+        
+        .nav-item.active {
+            background: #475569;
+            border-left-color: #06b6d4;
+            color: #06b6d4;
+        }
+        
+        .main-content {
+            margin-left: 250px;
+            padding: 2rem;
+        }
+        
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+        
+        .card {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid #334155;
+        }
+        
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .card-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #e2e8f0;
+        }
+        
+        .card-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #06b6d4;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        
+        .btn-primary {
+            background: #06b6d4;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0891b2;
+        }
+        
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+        
+        .btn-warning {
+            background: #f59e0b;
+            color: #1f2937;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+        
+        .table th,
+        .table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+            color: #e2e8f0;
+        }
+        
+        .table th {
+            background: #1e293b;
+            font-weight: 600;
+        }
+        
+        .status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .status-online {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-offline {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #334155;
+            border-radius: 5px;
+            font-size: 1rem;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: #06b6d4;
+            box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+        }
+        
+        .modal.show {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .modal-content {
+            background: #1e293b;
+            border-radius: 10px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+            border: 1px solid #334155;
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #94a3b8;
+        }
+        
+        .search-bar {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .search-input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #334155;
+            border-radius: 5px;
+            background: #1e293b;
+            color: #e2e8f0;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 2rem;
+        }
+        
+        .tab {
+            padding: 1rem 2rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+        
+        .tab.active {
+            border-bottom-color: #667eea;
+            color: #667eea;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .permission-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        .permission-user {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .permission-manager {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-blocked {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .status-threat {
+            background: #f5c6cb;
+            color: #721c24;
+        }
+        
+        .status-suspicious {
+            background: #ffeaa7;
+            color: #6c5ce7;
+        }
+        
+        .btn-info {
+            background: #17a2b8;
+            color: white;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="logo">IoT-EDU</div>
+        <div class="user-info">
+            <span>João Silva</span>
+            <div class="user-avatar">JS</div>
+        </div>
+    </header>
+
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="nav-item active">
+            📊 Dashboard
+        </div>
+        <div class="nav-item">
+            🔧 Meus Dispositivos
+        </div>
+        <div class="nav-item">
+            🚨 Minhas Ocorrências
+        </div>
+        <!-- Itens de Gestor (ocultos para usuários comuns) -->
+        <div class="nav-item" style="display: none;">
+            👥 Usuários
+        </div>
+        <div class="nav-item" style="display: none;">
+            ⚙️ Configurações
+        </div>
+        <div class="nav-item" style="display: none;">
+            📈 Relatórios
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Dashboard -->
+        <div class="dashboard-grid">
+            <!-- Cards para Usuário Comum -->
+            <div class="card user-card">
+                <div class="card-header">
+                    <div class="card-title">Meus Dispositivos</div>
+                </div>
+                <div class="card-value">3</div>
+                <div style="color: #666; font-size: 0.9rem;">+1 este mês</div>
+            </div>
+            
+            <div class="card user-card">
+                <div class="card-header">
+                    <div class="card-title">Dispositivos Online</div>
+                </div>
+                <div class="card-value">2</div>
+                <div style="color: #28a745; font-size: 0.9rem;">67% ativos</div>
+            </div>
+            
+            <div class="card user-card">
+                <div class="card-header">
+                    <div class="card-title">Minhas Ocorrências</div>
+                </div>
+                <div class="card-value">2</div>
+                <div style="color: #ffc107; font-size: 0.9rem;">1 pendente</div>
+            </div>
+            
+            <!-- Cards para Gestor -->
+            <div class="card manager-card" style="display: none;">
+                <div class="card-header">
+                    <div class="card-title">Total de Dispositivos</div>
+                </div>
+                <div class="card-value">24</div>
+                <div style="color: #666; font-size: 0.9rem;">+3 este mês</div>
+            </div>
+            
+            <div class="card manager-card" style="display: none;">
+                <div class="card-header">
+                    <div class="card-title">Dispositivos Online</div>
+                </div>
+                <div class="card-value">18</div>
+                <div style="color: #28a745; font-size: 0.9rem;">75% ativos</div>
+            </div>
+            
+            <div class="card manager-card" style="display: none;">
+                <div class="card-header">
+                    <div class="card-title">Usuários Ativos</div>
+                </div>
+                <div class="card-value">12</div>
+                <div style="color: #007bff; font-size: 0.9rem;">3 gestores</div>
+            </div>
+            
+            <div class="card manager-card" style="display: none;">
+                <div class="card-header">
+                    <div class="card-title">Ocorrências Ativas</div>
+                </div>
+                <div class="card-value">3</div>
+                <div style="color: #dc3545; font-size: 0.9rem;">1 alta prioridade</div>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active">Meus Dispositivos</div>
+            <div class="tab">Minhas Ocorrências</div>
+            <!-- Tabs de Gestor (ocultas para usuários comuns) -->
+            <div class="tab" style="display: none;">Todos os Dispositivos</div>
+            <div class="tab" style="display: none;">Dispositivos Ativos</div>
+            <div class="tab" style="display: none;">Dispositivos Bloqueados</div>
+            <div class="tab" style="display: none;">Aguardando Acesso</div>
+            <div class="tab" style="display: none;">Ocorrências</div>
+            <div class="tab" style="display: none;">Usuários</div>
+        </div>
+
+        <!-- Tab Content: Meus Dispositivos -->
+        <div class="tab-content active">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar dispositivos...">
+                <button class="btn btn-primary">Buscar</button>
+                <button class="btn btn-success" onclick="showModal('addDeviceModal')">+ Novo Dispositivo</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Status</th>
+                        <th>Última Atividade</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Sensor Temperatura Lab 1</td>
+                        <td>192.168.1.100</td>
+                        <td>AA:BB:CC:DD:EE:01</td>
+                        <td><span class="status-badge status-online">Online</span></td>
+                        <td>2 min atrás</td>
+                        <td>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Editar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Remover</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Sensor Umidade Lab 2</td>
+                        <td>192.168.1.101</td>
+                        <td>AA:BB:CC:DD:EE:02</td>
+                        <td><span class="status-badge status-offline">Offline</span></td>
+                        <td>1 hora atrás</td>
+                        <td>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Editar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Remover</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab Content: Minhas Ocorrências (Usuário) -->
+        <div class="tab-content">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar ocorrências dos meus dispositivos...">
+                <button class="btn btn-primary">Buscar</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Dispositivo</th>
+                        <th>IP</th>
+                        <th>Tipo de Ocorrência</th>
+                        <th>Severidade</th>
+                        <th>Descrição</th>
+                        <th>Detectado em</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Sensor Temperatura Lab 1</td>
+                        <td>192.168.1.100</td>
+                        <td>Comportamento Suspeito</td>
+                        <td><span class="status-badge status-suspicious">Médio</span></td>
+                        <td>Comunicação com IP externo não autorizado</td>
+                        <td>Ontem 22:15</td>
+                        <td><span class="status-badge status-active">Resolvido</span></td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Sensor Umidade Lab 2</td>
+                        <td>192.168.1.101</td>
+                        <td>Comportamento Suspeito</td>
+                        <td><span class="status-badge status-suspicious">Baixo</span></td>
+                        <td>Alto volume de tráfego detectado</td>
+                        <td>Hoje 08:30</td>
+                        <td><span class="status-badge status-pending">Investigando</span></td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab Content: Todos os Dispositivos (Gestor) -->
+        <div class="tab-content">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar dispositivos...">
+                <button class="btn btn-primary">Buscar</button>
+                <button class="btn btn-success" onclick="showModal('addDeviceModal')">+ Novo Dispositivo</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Proprietário</th>
+                        <th>Status</th>
+                        <th>Última Atividade</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Sensor Temperatura Lab 1</td>
+                        <td>192.168.1.100</td>
+                        <td>AA:BB:CC:DD:EE:01</td>
+                        <td>João Silva</td>
+                        <td><span class="status-badge status-online">Online</span></td>
+                        <td>2 min atrás</td>
+                        <td>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Editar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Remover</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Servidor Web</td>
+                        <td>192.168.1.10</td>
+                        <td>AA:BB:CC:DD:EE:10</td>
+                        <td>Maria Santos</td>
+                        <td><span class="status-badge status-online">Online</span></td>
+                        <td>5 min atrás</td>
+                        <td>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Editar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Remover</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab Content: Dispositivos Ativos (Gestor) -->
+        <div class="tab-content">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar dispositivos ativos...">
+                <button class="btn btn-primary">Buscar</button>
+                <button class="btn btn-info" onclick="showModal('deviceDetailsModal')">📊 Relatório de Atividade</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Proprietário</th>
+                        <th>Status</th>
+                        <th>Última Atividade</th>
+                        <th>Tráfego (24h)</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Sensor Temperatura Lab 1</td>
+                        <td>192.168.1.100</td>
+                        <td>AA:BB:CC:DD:EE:01</td>
+                        <td>João Silva</td>
+                        <td><span class="status-badge status-active">Ativo</span></td>
+                        <td>2 min atrás</td>
+                        <td>1.2 GB</td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Bloquear</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Servidor Web</td>
+                        <td>192.168.1.10</td>
+                        <td>AA:BB:CC:DD:EE:10</td>
+                        <td>Maria Santos</td>
+                        <td><span class="status-badge status-active">Ativo</span></td>
+                        <td>5 min atrás</td>
+                        <td>15.8 GB</td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Bloquear</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab Content: Dispositivos Bloqueados (Gestor) -->
+        <div class="tab-content">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar dispositivos bloqueados...">
+                <button class="btn btn-primary">Buscar</button>
+                <button class="btn btn-success" onclick="showModal('unblockModal')">🔓 Desbloquear Selecionados</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Proprietário</th>
+                        <th>Motivo do Bloqueio</th>
+                        <th>Bloqueado em</th>
+                        <th>Bloqueado por</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Dispositivo Suspeito</td>
+                        <td>192.168.1.200</td>
+                        <td>FF:EE:DD:CC:BB:AA</td>
+                        <td>Usuário Desconhecido</td>
+                        <td>Comportamento suspeito</td>
+                        <td>Hoje 10:30</td>
+                        <td>Sistema Automático</td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-success" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Desbloquear</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Notebook Lab 3</td>
+                        <td>192.168.1.150</td>
+                        <td>11:22:33:44:55:66</td>
+                        <td>Pedro Costa</td>
+                        <td>Violation de política</td>
+                        <td>Ontem 16:45</td>
+                        <td>Maria Santos</td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-success" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Desbloquear</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab Content: Aguardando Acesso (Gestor) -->
+        <div class="tab-content">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar dispositivos aguardando...">
+                <button class="btn btn-primary">Buscar</button>
+                <button class="btn btn-success" onclick="showModal('approveModal')">✅ Aprovar Selecionados</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>IP</th>
+                        <th>MAC</th>
+                        <th>Solicitante</th>
+                        <th>Status</th>
+                        <th>Solicitado em</th>
+                        <th>Justificativa</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Novo Sensor IoT</td>
+                        <td>192.168.1.201</td>
+                        <td>AA:BB:CC:DD:EE:FF</td>
+                        <td>Ana Oliveira</td>
+                        <td><span class="status-badge status-pending">Aguardando</span></td>
+                        <td>Hoje 09:15</td>
+                        <td>Sensor para projeto de pesquisa</td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-success" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Aprovar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Rejeitar</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Dispositivo Móvel</td>
+                        <td>192.168.1.202</td>
+                        <td>BB:CC:DD:EE:FF:00</td>
+                        <td>Carlos Mendes</td>
+                        <td><span class="status-badge status-pending">Aguardando</span></td>
+                        <td>Ontem 14:20</td>
+                        <td>Tablet para apresentação</td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-success" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Aprovar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Rejeitar</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab Content: Ocorrências (Gestor) -->
+        <div class="tab-content">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar ocorrências...">
+                <button class="btn btn-primary">Buscar</button>
+                <button class="btn btn-secondary" onclick="showModal('exportIncidentsModal')">📄 Exportar Relatório</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Dispositivo</th>
+                        <th>IP</th>
+                        <th>Tipo de Ocorrência</th>
+                        <th>Severidade</th>
+                        <th>Descrição</th>
+                        <th>Detectado em</th>
+                        <th>Status</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Dispositivo Desconhecido</td>
+                        <td>192.168.1.250</td>
+                        <td>Comportamento Suspeito</td>
+                        <td><span class="status-badge status-suspicious">Médio</span></td>
+                        <td>Múltiplas tentativas de acesso não autorizado</td>
+                        <td>Hoje 11:30</td>
+                        <td><span class="status-badge status-pending">Investigando</span></td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Bloquear</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Servidor Web</td>
+                        <td>192.168.1.10</td>
+                        <td>Ameaça Detectada</td>
+                        <td><span class="status-badge status-threat">Alto</span></td>
+                        <td>Tráfego anômalo detectado - possível ataque DDoS</td>
+                        <td>Hoje 08:45</td>
+                        <td><span class="status-badge status-blocked">Bloqueado</span></td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-success" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Resolver</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Sensor Lab 2</td>
+                        <td>192.168.1.101</td>
+                        <td>Comportamento Suspeito</td>
+                        <td><span class="status-badge status-suspicious">Baixo</span></td>
+                        <td>Comunicação com IP externo não autorizado</td>
+                        <td>Ontem 22:15</td>
+                        <td><span class="status-badge status-active">Resolvido</span></td>
+                        <td>
+                            <button class="btn btn-info" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Detalhar</button>
+                            <button class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Arquivar</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Tab Content: Usuários (Gestor) -->
+        <div class="tab-content">
+            <div class="search-bar">
+                <input type="text" class="search-input" placeholder="Buscar usuários...">
+                <button class="btn btn-primary">Buscar</button>
+                <button class="btn btn-success" onclick="showModal('addUserModal')">+ Novo Usuário</button>
+            </div>
+
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nome</th>
+                        <th>Email</th>
+                        <th>Instituição</th>
+                        <th>Permissão</th>
+                        <th>Dispositivos</th>
+                        <th>Último Login</th>
+                        <th>Ações</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>João Silva</td>
+                        <td>joao@unipampa.edu.br</td>
+                        <td>UNIPAMPA</td>
+                        <td><span class="permission-badge permission-user">Usuário</span></td>
+                        <td>3</td>
+                        <td>Hoje 14:30</td>
+                        <td>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Editar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Remover</button>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Maria Santos</td>
+                        <td>maria@unipampa.edu.br</td>
+                        <td>UNIPAMPA</td>
+                        <td><span class="permission-badge permission-manager">Gestor</span></td>
+                        <td>8</td>
+                        <td>Ontem 16:45</td>
+                        <td>
+                            <button class="btn btn-warning" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Editar</button>
+                            <button class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Remover</button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </main>
+
+    <!-- Modal: Adicionar Dispositivo -->
+    <div id="addDeviceModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Adicionar Novo Dispositivo</h3>
+                <button class="close" onclick="hideModal('addDeviceModal')">&times;</button>
+            </div>
+            <form>
+                <div class="form-group">
+                    <label class="form-label">Nome do Dispositivo</label>
+                    <input type="text" class="form-input" placeholder="Ex: Sensor Temperatura Lab 1">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Endereço IP</label>
+                    <input type="text" class="form-input" placeholder="Ex: 192.168.1.100">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Endereço MAC</label>
+                    <input type="text" class="form-input" placeholder="Ex: AA:BB:CC:DD:EE:FF">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Descrição</label>
+                    <input type="text" class="form-input" placeholder="Ex: Sensor de temperatura do laboratório 1">
+                </div>
+                <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                    <button type="button" class="btn" onclick="hideModal('addDeviceModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Adicionar Usuário -->
+    <div id="addUserModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Adicionar Novo Usuário</h3>
+                <button class="close" onclick="hideModal('addUserModal')">&times;</button>
+            </div>
+            <form>
+                <div class="form-group">
+                    <label class="form-label">Nome Completo</label>
+                    <input type="text" class="form-input" placeholder="Ex: João Silva">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" placeholder="Ex: joao@unipampa.edu.br">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Instituição</label>
+                    <input type="text" class="form-input" placeholder="Ex: UNIPAMPA">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Permissão</label>
+                    <select class="form-input">
+                        <option value="user">Usuário</option>
+                        <option value="manager">Gestor</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                    <button type="button" class="btn" onclick="hideModal('addUserModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Detalhes do Dispositivo -->
+    <div id="deviceDetailsModal" class="modal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h3>Detalhes do Dispositivo</h3>
+                <button class="close" onclick="hideModal('deviceDetailsModal')">&times;</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                <div>
+                    <h4>Informações Básicas</h4>
+                    <p><strong>Nome:</strong> Sensor Temperatura Lab 1</p>
+                    <p><strong>IP:</strong> 192.168.1.100</p>
+                    <p><strong>MAC:</strong> AA:BB:CC:DD:EE:01</p>
+                    <p><strong>Proprietário:</strong> João Silva</p>
+                    <p><strong>Status:</strong> <span class="status-badge status-active">Ativo</span></p>
+                </div>
+                <div>
+                    <h4>Atividade Recente</h4>
+                    <p><strong>Última Atividade:</strong> 2 min atrás</p>
+                    <p><strong>Tráfego (24h):</strong> 1.2 GB</p>
+                    <p><strong>Conectividade:</strong> Estável</p>
+                    <p><strong>Uptime:</strong> 99.8%</p>
+                </div>
+            </div>
+            <div style="margin-top: 2rem;">
+                <h4>Log de Atividade</h4>
+                <div style="background: #f8f9fa; padding: 1rem; border-radius: 5px; max-height: 200px; overflow-y: auto;">
+                    <p>14:30 - Conexão estabelecida</p>
+                    <p>14:25 - Dados enviados (2.3 MB)</p>
+                    <p>14:20 - Ping respondido</p>
+                    <p>14:15 - Verificação de status</p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                <button type="button" class="btn" onclick="hideModal('deviceDetailsModal')">Fechar</button>
+                <button type="button" class="btn btn-warning">Bloquear Dispositivo</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal: Bloquear Dispositivo -->
+    <div id="blockDeviceModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Bloquear Dispositivo</h3>
+                <button class="close" onclick="hideModal('blockDeviceModal')">&times;</button>
+            </div>
+            <form>
+                <div class="form-group">
+                    <label class="form-label">Dispositivo</label>
+                    <input type="text" class="form-input" value="Sensor Temperatura Lab 1 (192.168.1.100)" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Motivo do Bloqueio</label>
+                    <select class="form-input">
+                        <option value="suspicious">Comportamento Suspeito</option>
+                        <option value="policy">Violação de Política</option>
+                        <option value="security">Ameaça de Segurança</option>
+                        <option value="maintenance">Manutenção</option>
+                        <option value="other">Outro</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Descrição Adicional</label>
+                    <textarea class="form-input" rows="3" placeholder="Descreva o motivo do bloqueio..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Duração do Bloqueio</label>
+                    <select class="form-input">
+                        <option value="temporary">Temporário (até resolução)</option>
+                        <option value="1hour">1 Hora</option>
+                        <option value="24hours">24 Horas</option>
+                        <option value="permanent">Permanente</option>
+                    </select>
+                </div>
+                <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                    <button type="button" class="btn" onclick="hideModal('blockDeviceModal')">Cancelar</button>
+                    <button type="submit" class="btn btn-danger">Bloquear Dispositivo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Aprovar Dispositivo -->
+    <div id="approveModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Aprovar Dispositivo</h3>
+                <button class="close" onclick="hideModal('approveModal')">&times;</button>
+            </div>
+            <form>
+                <div class="form-group">
+                    <label class="form-label">Dispositivo</label>
+                    <input type="text" class="form-input" value="Novo Sensor IoT (192.168.1.201)" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Solicitante</label>
+                    <input type="text" class="form-input" value="Ana Oliveira" readonly>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Justificativa</label>
+                    <textarea class="form-input" rows="3" readonly>Sensor para projeto de pesquisa</textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Observações do Gestor</label>
+                    <textarea class="form-input" rows="3" placeholder="Adicione observações sobre a aprovação..."></textarea>
+                </div>
+                <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                    <button type="button" class="btn" onclick="hideModal('approveModal')">Cancelar</button>
+                    <button type="button" class="btn btn-danger" onclick="hideModal('approveModal')">Rejeitar</button>
+                    <button type="submit" class="btn btn-success">Aprovar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Detalhes da Ocorrência -->
+    <div id="incidentDetailsModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h3>Detalhes da Ocorrência</h3>
+                <button class="close" onclick="hideModal('incidentDetailsModal')">&times;</button>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;">
+                <div>
+                    <h4>Informações da Ocorrência</h4>
+                    <p><strong>ID:</strong> INC-2025-001</p>
+                    <p><strong>Tipo:</strong> Comportamento Suspeito</p>
+                    <p><strong>Severidade:</strong> <span class="status-badge status-suspicious">Médio</span></p>
+                    <p><strong>Status:</strong> <span class="status-badge status-pending">Investigando</span></p>
+                    <p><strong>Detectado em:</strong> Hoje 11:30</p>
+                </div>
+                <div>
+                    <h4>Dispositivo Envolvido</h4>
+                    <p><strong>Nome:</strong> Dispositivo Desconhecido</p>
+                    <p><strong>IP:</strong> 192.168.1.250</p>
+                    <p><strong>MAC:</strong> Desconhecido</p>
+                    <p><strong>Proprietário:</strong> Não identificado</p>
+                </div>
+            </div>
+            <div style="margin-top: 2rem;">
+                <h4>Descrição</h4>
+                <p>Múltiplas tentativas de acesso não autorizado detectadas. O dispositivo tentou acessar recursos restritos em intervalos regulares.</p>
+            </div>
+            <div style="margin-top: 2rem;">
+                <h4>Evidências</h4>
+                <div style="background: #f8f9fa; padding: 1rem; border-radius: 5px;">
+                    <p><strong>11:30:15</strong> - Tentativa de acesso SSH falhada</p>
+                    <p><strong>11:30:45</strong> - Tentativa de acesso HTTP em porta 8080</p>
+                    <p><strong>11:31:20</strong> - Scan de portas detectado</p>
+                    <p><strong>11:32:10</strong> - Tentativa de acesso FTP</p>
+                </div>
+            </div>
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                <button type="button" class="btn" onclick="hideModal('incidentDetailsModal')">Fechar</button>
+                <button type="button" class="btn btn-warning">Bloquear IP</button>
+                <button type="button" class="btn btn-success">Marcar como Resolvido</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simular tipo de usuário (USER ou MANAGER)
+        const userType = 'USER'; // Mude para 'MANAGER' para ver a visão de gestor
+        
+        // Função para controlar visibilidade baseada no tipo de usuário
+        function setUserPermissions() {
+            if (userType === 'USER') {
+                // Ocultar elementos de gestor
+                document.querySelectorAll('[style*="display: none"]').forEach(el => {
+                    el.style.display = 'none';
+                });
+                
+                // Mostrar apenas cards de usuário
+                document.querySelectorAll('.user-card').forEach(card => {
+                    card.style.display = 'block';
+                });
+                document.querySelectorAll('.manager-card').forEach(card => {
+                    card.style.display = 'none';
+                });
+                
+                // Mostrar apenas tabs de usuário
+                const userTabs = document.querySelectorAll('.tab');
+                userTabs.forEach((tab, index) => {
+                    if (index > 1) { // Ocultar tabs após "Minhas Ocorrências"
+                        tab.style.display = 'none';
+                    }
+                });
+                
+                // Mostrar apenas conteúdo de usuário
+                const userTabContents = document.querySelectorAll('.tab-content');
+                userTabContents.forEach((content, index) => {
+                    if (index > 1) { // Ocultar conteúdo após "Minhas Ocorrências"
+                        content.style.display = 'none';
+                    }
+                });
+            } else {
+                // Para gestor: mostrar apenas tabs administrativas
+                document.querySelectorAll('[style*="display: none"]').forEach(el => {
+                    el.style.display = '';
+                });
+                
+                // Mostrar apenas cards de gestor
+                document.querySelectorAll('.user-card').forEach(card => {
+                    card.style.display = 'none';
+                });
+                document.querySelectorAll('.manager-card').forEach(card => {
+                    card.style.display = 'block';
+                });
+                
+                // Ocultar tabs pessoais do gestor
+                const allTabs = document.querySelectorAll('.tab');
+                allTabs.forEach((tab, index) => {
+                    if (index === 0 || index === 1) { // Ocultar "Meus Dispositivos" e "Minhas Ocorrências"
+                        tab.style.display = 'none';
+                    }
+                });
+                
+                // Ocultar conteúdo pessoal do gestor
+                const allTabContents = document.querySelectorAll('.tab-content');
+                allTabContents.forEach((content, index) => {
+                    if (index === 0 || index === 1) { // Ocultar conteúdo de "Meus Dispositivos" e "Minhas Ocorrências"
+                        content.style.display = 'none';
+                    }
+                });
+                
+                // Ocultar itens pessoais da sidebar para gestor
+                const sidebarItems = document.querySelectorAll('.nav-item');
+                sidebarItems.forEach((item, index) => {
+                    if (index === 1 || index === 2) { // Ocultar "Meus Dispositivos" e "Minhas Ocorrências"
+                        item.style.display = 'none';
+                    }
+                });
+                
+                // Ativar primeira tab administrativa
+                if (allTabs.length > 2) {
+                    allTabs[2].classList.add('active');
+                }
+                if (allTabContents.length > 2) {
+                    allTabContents[2].classList.add('active');
+                }
+            }
+        }
+
+        // Tab functionality
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                // Remove active class from all tabs and contents
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                // Add active class to clicked tab
+                tab.classList.add('active');
+                
+                // Show corresponding content
+                const visibleTabs = Array.from(document.querySelectorAll('.tab')).filter(t => t.style.display !== 'none');
+                const index = visibleTabs.indexOf(tab);
+                const visibleContents = Array.from(document.querySelectorAll('.tab-content')).filter(c => c.style.display !== 'none');
+                
+                if (visibleContents[index]) {
+                    visibleContents[index].classList.add('active');
+                }
+            });
+        });
+
+        // Modal functionality
+        function showModal(modalId) {
+            document.getElementById(modalId).classList.add('show');
+        }
+
+        function hideModal(modalId) {
+            document.getElementById(modalId).classList.remove('show');
+        }
+
+        // Close modal when clicking outside
+        document.querySelectorAll('.modal').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.classList.remove('show');
+                }
+            });
+        });
+
+        // Navigation functionality
+        document.querySelectorAll('.nav-item').forEach(item => {
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+            });
+        });
+
+        // Inicializar permissões quando a página carregar
+        document.addEventListener('DOMContentLoaded', setUserPermissions);
+    </script>
+</body>
+</html>

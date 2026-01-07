@@ -1,0 +1,1707 @@
+openapi: 3.0.0
+info:
+  title: API IoT-EDU
+  description: |
+    API para gerenciamento de dispositivos IoT educacionais com integração pfSense.
+    
+    ## Funcionalidades Principais
+    - **DHCP Management**: Gerenciamento de mapeamentos estáticos DHCP
+    - **Device Management**: Cadastro e gerenciamento de dispositivos IoT
+    - **User Permissions**: Sistema de permissões (USER/MANAGER)
+    - **Alias Management**: Gerenciamento de aliases pfSense
+    - **Authentication**: Integração com SAML CAFe e OAuth2 CAFe
+    
+    ## Autenticação
+    A API utiliza autenticação baseada em SAML CAFe e OAuth2 CAFe para controle de acesso.
+    
+    ## Permissões
+    - **USER**: Pode gerenciar apenas seus próprios dispositivos
+    - **MANAGER**: Pode gerenciar todos os dispositivos e usuários
+  version: 2.0.0
+  contact:
+    name: Equipe IoT-EDU
+    email: iot-edu@ufrgs.br
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://127.0.0.1:8000
+    description: Servidor de Desenvolvimento
+  - url: https://iotedu.dev.ufrgs.br
+    description: Servidor de Produção
+
+tags:
+  - name: Health
+    description: Endpoints de monitoramento e saúde da API
+  - name: Authentication
+    description: Endpoints de autenticação SAML e OAuth2
+  - name: DHCP
+    description: Gerenciamento de DHCP e mapeamentos estáticos
+  - name: Devices
+    description: Gerenciamento de dispositivos IoT
+  - name: Users
+    description: Gerenciamento de usuários e permissões
+  - name: Aliases
+    description: Gerenciamento de aliases pfSense
+  - name: Assignments
+    description: Atribuição de dispositivos a usuários
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Verificação de saúde da API
+      description: Endpoint para verificar o status de saúde da API IoT-EDU
+      operationId: getHealth
+      responses:
+        '200':
+          description: API saudável
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: "healthy"
+                timestamp: "2024-01-01T00:00:00Z"
+                version: "2.0.0"
+        '500':
+          description: Erro interno do servidor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /:
+    get:
+      tags:
+        - Health
+      summary: Página inicial da API
+      description: Endpoint principal que retorna informações sobre a API
+      operationId: getRoot
+      responses:
+        '200':
+          description: Informações da API
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RootResponse'
+
+  /docs:
+    get:
+      tags:
+        - Health
+      summary: Documentação Swagger
+      description: Interface Swagger para documentação interativa
+      operationId: getDocs
+      responses:
+        '200':
+          description: Interface Swagger HTML
+
+  /auth/login:
+    get:
+      tags:
+        - Authentication
+      summary: Iniciar login SAML CAFe
+      description: Inicia o processo de autenticação SAML CAFe
+      operationId: samlLogin
+      responses:
+        '200':
+          description: Redirecionamento para login SAML
+        '302':
+          description: Redirecionamento para provedor SAML
+
+  /auth/callback:
+    get:
+      tags:
+        - Authentication
+      summary: Callback SAML CAFe
+      description: Callback para processar resposta do SAML CAFe
+      operationId: samlCallback
+      parameters:
+        - name: SAMLResponse
+          in: query
+          description: Resposta SAML do provedor
+          required: true
+          schema:
+            type: string
+        - name: RelayState
+          in: query
+          description: Estado de retorno
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Autenticação bem-sucedida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Erro na autenticação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    get:
+      tags:
+        - Authentication
+      summary: Logout SAML CAFe
+      description: Encerra a sessão SAML CAFe
+      operationId: samlLogout
+      responses:
+        '200':
+          description: Logout bem-sucedido
+        '302':
+          description: Redirecionamento para logout
+
+  /auth/verify:
+    get:
+      tags:
+        - Authentication
+      summary: Verificar token JWT
+      description: Verifica a validade de um token JWT
+      operationId: verifyToken
+      parameters:
+        - name: token
+          in: query
+          description: Token JWT para verificação
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Token válido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenVerifyResponse'
+        '401':
+          description: Token inválido ou expirado
+
+  /auth/metadata:
+    get:
+      tags:
+        - Authentication
+      summary: Metadados SAML
+      description: Retorna os metadados SAML da aplicação
+      operationId: getSamlMetadata
+      responses:
+        '200':
+          description: Metadados SAML
+          content:
+            application/xml:
+              schema:
+                type: string
+
+  /auth/status:
+    get:
+      tags:
+        - Authentication
+      summary: Status da autenticação
+      description: Verifica o status do sistema de autenticação
+      operationId: getAuthStatus
+      responses:
+        '200':
+          description: Status do sistema de autenticação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthStatusResponse'
+
+  /api/auth/login:
+    get:
+      tags:
+        - Authentication
+      summary: Iniciar autenticação OAuth2 CAFe
+      description: Inicia o processo de autenticação OAuth2 CAFe
+      operationId: oauth2Login
+      responses:
+        '200':
+          description: Redirecionamento para login OAuth2
+        '302':
+          description: Redirecionamento para provedor OAuth2
+
+  /api/auth/callback:
+    get:
+      tags:
+        - Authentication
+      summary: Callback OAuth2 CAFe
+      description: Callback para processar resposta do OAuth2 CAFe
+      operationId: oauth2Callback
+      parameters:
+        - name: code
+          in: query
+          description: Código de autorização OAuth2
+          required: true
+          schema:
+            type: string
+        - name: state
+          in: query
+          description: Estado de retorno
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Autenticação bem-sucedida
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '400':
+          description: Erro na autenticação
+
+  /api/devices/dhcp/save:
+    post:
+      tags:
+        - DHCP
+      summary: Salvar dados DHCP no banco
+      description: |
+        Salva os dados DHCP no banco de dados local e no pfSense.
+        
+        **Lógica de Negócio:**
+        - Primeiro tenta salvar no pfSense
+        - Só salva no banco de dados se o pfSense for bem-sucedido
+        - Se pfSense falhar, retorna sucesso mas com `pfsense_saved: false`
+        - Garante consistência entre pfSense e banco de dados
+        
+        **Parâmetros obrigatórios:**
+        - `mac`: Endereço MAC do dispositivo
+        - `ipaddr`: Endereço IP do dispositivo  
+        - `cid`: ID do cliente (replicado para hostname)
+        - `descr`: Descrição do dispositivo
+      operationId: saveDhcpData
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DhcpSaveRequest'
+            example:
+              parent_id: "lan"
+              id: 1
+              mac: "bc:24:11:2c:0f:31"
+              ipaddr: "10.30.30.10"
+              cid: "lubuntu-live"
+              hostname: "lubuntu-live"
+              descr: "lubuntu-live-proxmox"
+      responses:
+        '200':
+          description: Operação concluída
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DhcpSaveResponse'
+              examples:
+                success_pfsense:
+                  summary: Sucesso no pfSense e banco
+                  value:
+                    status: "success"
+                    servers_saved: 1
+                    mappings_saved: 1
+                    mappings_updated: 0
+                    timestamp: "2025-09-02T18:04:33.932473"
+                    pfsense_saved: true
+                    pfsense_message: "Dados salvos no pfSense com sucesso"
+                success_no_pfsense:
+                  summary: Sucesso mas falha no pfSense
+                  value:
+                    status: "success"
+                    servers_saved: 0
+                    mappings_saved: 0
+                    mappings_updated: 0
+                    timestamp: "2025-09-02T18:04:33.932473"
+                    pfsense_saved: false
+                    pfsense_message: "Erro ao salvar no pfSense: 400 Client Error: Bad Request for url: https://iotedu.dev.ufrgs.br/api/v2/services/dhcp_server/static_mapping"
+        '400':
+          description: Dados inválidos
+        '500':
+          description: Erro interno do servidor
+
+  /api/devices/dhcp/servers:
+    get:
+      tags:
+        - DHCP
+      summary: Listar servidores DHCP
+      description: Lista todos os servidores DHCP do pfSense
+      operationId: getDhcpServers
+      responses:
+        '200':
+          description: Lista de servidores DHCP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DhcpServersResponse'
+        '500':
+          description: Erro ao conectar com pfSense
+
+  /api/devices/dhcp/static_mapping:
+    get:
+      tags:
+        - DHCP
+      summary: Listar mapeamentos estáticos
+      description: Lista todos os mapeamentos estáticos DHCP
+      operationId: getStaticMappings
+      responses:
+        '200':
+          description: Lista de mapeamentos estáticos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaticMappingsResponse'
+    post:
+      tags:
+        - DHCP
+      summary: Criar mapeamento estático
+      description: Cria um novo mapeamento estático no pfSense
+      operationId: createStaticMapping
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StaticMappingRequest'
+            example:
+              parent_id: "lan"
+              mac: "aa:bb:cc:dd:ee:ff"
+              ipaddr: "10.30.30.50"
+              cid: "test-device"
+              hostname: "test-device"
+              descr: "Dispositivo de teste"
+      responses:
+        '200':
+          description: Mapeamento criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaticMappingResponse'
+        '400':
+          description: Dados inválidos
+        '409':
+          description: Mapeamento já existe
+    delete:
+      tags:
+        - DHCP
+      summary: Excluir mapeamento estático
+      description: |
+        Exclui um mapeamento estático DHCP no pfSense.
+        
+        **Parâmetros obrigatórios:**
+        - `parent_id`: ID do servidor DHCP pai (ex: 1 para lan)
+        - `mapping_id`: ID do mapeamento estático DHCP a ser excluído
+        
+        **Parâmetros opcionais:**
+        - `apply`: Se deve aplicar a exclusão imediatamente (padrão: false)
+        
+        ⚠️ **IMPORTANTE**: Esta operação é irreversível. Certifique-se de que o mapeamento
+        correto está sendo excluído antes de confirmar.
+      operationId: deleteStaticMapping
+      parameters:
+        - name: parent_id
+          in: query
+          description: ID do servidor DHCP pai (ex: 1 para lan)
+          required: true
+          schema:
+            type: integer
+            example: 1
+        - name: mapping_id
+          in: query
+          description: ID do mapeamento estático DHCP a ser excluído
+          required: true
+          schema:
+            type: integer
+            example: 5
+        - name: apply
+          in: query
+          description: Aplicar a exclusão imediatamente
+          required: false
+          schema:
+            type: boolean
+            default: false
+            example: true
+      responses:
+        '200':
+          description: Mapeamento excluído com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DhcpStaticMappingDeleteResponse'
+              examples:
+                success_without_apply:
+                  summary: Exclusão sem aplicar
+                  value:
+                    success: true
+                    message: "Mapeamento estático DHCP (ID: 5) excluído com sucesso no pfSense"
+                    parent_id: 1
+                    mapping_id: 5
+                    applied: false
+                    data:
+                      status: "success"
+                      message: "Static mapping deleted successfully"
+                success_with_apply:
+                  summary: Exclusão aplicada
+                  value:
+                    success: true
+                    message: "Mapeamento estático DHCP (ID: 5) excluído com sucesso no pfSense"
+                    parent_id: 1
+                    mapping_id: 5
+                    applied: true
+                    data:
+                      status: "success"
+                      message: "Static mapping deleted and applied successfully"
+        '404':
+          description: Mapeamento não encontrado
+        '500':
+          description: Erro interno do servidor
+
+  /api/devices/dhcp/static_mapping/check:
+    get:
+      tags:
+        - DHCP
+      summary: Verificar mapeamentos existentes
+      description: Verifica se um IP ou MAC já está mapeado
+      operationId: checkStaticMapping
+      parameters:
+        - name: ipaddr
+          in: query
+          description: Endereço IP para verificar
+          schema:
+            type: string
+            format: ipv4
+        - name: mac
+          in: query
+          description: Endereço MAC para verificar
+          schema:
+            type: string
+            pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+      responses:
+        '200':
+          description: Resultado da verificação
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StaticMappingCheckResponse'
+        '400':
+          description: Parâmetros inválidos
+
+  /api/devices/dhcp/devices:
+    get:
+      tags:
+        - Devices
+      summary: Listar dispositivos
+      description: Lista todos os dispositivos cadastrados com paginação
+      operationId: getDevices
+      parameters:
+        - name: page
+          in: query
+          description: Número da página
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: per_page
+          in: query
+          description: Itens por página
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+      responses:
+        '200':
+          description: Lista de dispositivos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicesResponse'
+
+  /api/devices/dhcp/devices/search:
+    get:
+      tags:
+        - Devices
+      summary: Buscar dispositivos
+      description: Busca dispositivos por critérios específicos
+      operationId: searchDevices
+      parameters:
+        - name: q
+          in: query
+          description: Termo de busca
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Status do dispositivo
+          schema:
+            type: string
+            enum: [active, inactive, blocked]
+      responses:
+        '200':
+          description: Resultados da busca
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DevicesResponse'
+
+  /api/devices/dhcp/devices/ip/{ipaddr}:
+    get:
+      tags:
+        - Devices
+      summary: Buscar dispositivo por IP
+      description: Busca um dispositivo específico pelo endereço IP
+      operationId: getDeviceByIp
+      parameters:
+        - name: ipaddr
+          in: path
+          description: Endereço IP do dispositivo
+          required: true
+          schema:
+            type: string
+            format: ipv4
+      responses:
+        '200':
+          description: Dispositivo encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '404':
+          description: Dispositivo não encontrado
+
+  /api/devices/dhcp/devices/mac/{mac}:
+    get:
+      tags:
+        - Devices
+      summary: Buscar dispositivo por MAC
+      description: Busca um dispositivo específico pelo endereço MAC
+      operationId: getDeviceByMac
+      parameters:
+        - name: mac
+          in: path
+          description: Endereço MAC do dispositivo
+          required: true
+          schema:
+            type: string
+            pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+      responses:
+        '200':
+          description: Dispositivo encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceResponse'
+        '404':
+          description: Dispositivo não encontrado
+
+  /api/devices/dhcp/statistics:
+    get:
+      tags:
+        - DHCP
+      summary: Estatísticas de dispositivos
+      description: Retorna estatísticas sobre dispositivos DHCP
+      operationId: getDhcpStatistics
+      responses:
+        '200':
+          description: Estatísticas dos dispositivos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DhcpStatisticsResponse'
+
+  /api/devices/dhcp/ip-addresses:
+    get:
+      tags:
+        - DHCP
+      summary: Listar endereços IP
+      description: Lista todos os endereços IP da rede com status (usado/livre)
+      operationId: getIpAddresses
+      responses:
+        '200':
+          description: Lista de endereços IP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IpAddressesResponse'
+
+  /api/devices/devices:
+    get:
+      tags:
+        - Devices
+      summary: Listar todos os dispositivos (Gestores)
+      description: Lista todos os dispositivos cadastrados (apenas para gestores)
+      operationId: getAllDevices
+      parameters:
+        - name: current_user_id
+          in: query
+          description: ID do usuário gestor
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de todos os dispositivos
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AllDevicesResponse'
+        '403':
+          description: Acesso negado - usuário não é gestor
+
+  /api/devices/assignments:
+    post:
+      tags:
+        - Assignments
+      summary: Atribuir dispositivo a usuário
+      description: Atribui um dispositivo a um usuário específico
+      operationId: assignDevice
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeviceAssignmentRequest'
+            example:
+              user_id: 1
+              device_id: 1
+              notes: "Dispositivo atribuído para testes"
+              assigned_by: 2
+      responses:
+        '200':
+          description: Dispositivo atribuído com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceAssignmentResponse'
+        '400':
+          description: Dados inválidos
+        '403':
+          description: Permissão negada
+        '404':
+          description: Usuário ou dispositivo não encontrado
+
+  /api/devices/assignments/{user_id}/{device_id}:
+    delete:
+      tags:
+        - Assignments
+      summary: Remover atribuição de dispositivo
+      description: Remove a atribuição de um dispositivo de um usuário
+      operationId: removeDeviceAssignment
+      parameters:
+        - name: user_id
+          in: path
+          description: ID do usuário
+          required: true
+          schema:
+            type: integer
+        - name: device_id
+          in: path
+          description: ID do dispositivo
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Atribuição removida com sucesso
+        '403':
+          description: Permissão negada
+        '404':
+          description: Atribuição não encontrada
+
+  /api/devices/users/{user_id}/devices:
+    get:
+      tags:
+        - Users
+      summary: Dispositivos do usuário
+      description: Lista todos os dispositivos atribuídos a um usuário específico
+      operationId: getUserDevices
+      parameters:
+        - name: user_id
+          in: path
+          description: ID do usuário
+          required: true
+          schema:
+            type: integer
+        - name: current_user_id
+          in: query
+          description: ID do usuário atual (para verificação de permissões)
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de dispositivos do usuário
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserDevicesResponse'
+        '403':
+          description: Permissão negada
+        '404':
+          description: Usuário não encontrado
+
+  /api/devices/devices/{device_id}/users:
+    get:
+      tags:
+        - Devices
+      summary: Usuários do dispositivo
+      description: Lista todos os usuários atribuídos a um dispositivo específico
+      operationId: getDeviceUsers
+      parameters:
+        - name: device_id
+          in: path
+          description: ID do dispositivo
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lista de usuários do dispositivo
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceUsersResponse'
+        '404':
+          description: Dispositivo não encontrado
+
+  /api/devices/assignments/search:
+    get:
+      tags:
+        - Assignments
+      summary: Buscar atribuições
+      description: Busca atribuições de dispositivos por critérios específicos
+      operationId: searchAssignments
+      parameters:
+        - name: user_id
+          in: query
+          description: ID do usuário
+          schema:
+            type: integer
+        - name: device_id
+          in: query
+          description: ID do dispositivo
+          schema:
+            type: integer
+        - name: is_active
+          in: query
+          description: Status ativo da atribuição
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Resultados da busca
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentsSearchResponse'
+
+  /api/devices/assignments/statistics:
+    get:
+      tags:
+        - Assignments
+      summary: Estatísticas de atribuições
+      description: Retorna estatísticas sobre atribuições de dispositivos
+      operationId: getAssignmentStatistics
+      responses:
+        '200':
+          description: Estatísticas das atribuições
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssignmentStatisticsResponse'
+
+  /api/devices/aliases-db/save:
+    post:
+      tags:
+        - Aliases
+      summary: Salvar aliases do pfSense
+      description: Salva os aliases do pfSense no banco de dados local
+      operationId: saveAliases
+      responses:
+        '200':
+          description: Aliases salvos com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasesSaveResponse'
+        '500':
+          description: Erro ao salvar aliases
+
+  /api/devices/aliases-db:
+    get:
+      tags:
+        - Aliases
+      summary: Listar aliases
+      description: Lista todos os aliases cadastrados no banco local
+      operationId: getAliases
+      responses:
+        '200':
+          description: Lista de aliases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasesResponse'
+
+  /api/devices/aliases-db/search:
+    get:
+      tags:
+        - Aliases
+      summary: Buscar aliases
+      description: Busca aliases por nome ou tipo
+      operationId: searchAliases
+      parameters:
+        - name: name
+          in: query
+          description: Nome do alias
+          schema:
+            type: string
+        - name: type
+          in: query
+          description: Tipo do alias
+          schema:
+            type: string
+            enum: [host, network, port, url, urltable]
+      responses:
+        '200':
+          description: Resultados da busca
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasesResponse'
+
+  /api/devices/aliases-db/statistics:
+    get:
+      tags:
+        - Aliases
+      summary: Estatísticas de aliases
+      description: Retorna estatísticas sobre aliases cadastrados
+      operationId: getAliasesStatistics
+      responses:
+        '200':
+          description: Estatísticas dos aliases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasesStatisticsResponse'
+
+  /api/devices/aliases-db/create:
+    post:
+      tags:
+        - Aliases
+      summary: Criar novo alias
+      description: Cria um novo alias no pfSense e no banco local
+      operationId: createAlias
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AliasCreateRequest'
+            example:
+              name: "teste_api_iot_edu_v3"
+              type: "host"
+              descr: "Alias de teste criado via API v3"
+              address: ["192.168.1.200", "192.168.1.201"]
+              detail: ["Dispositivo de teste 1", "Dispositivo de teste 2"]
+      responses:
+        '200':
+          description: Alias criado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasResponse'
+        '400':
+          description: Dados inválidos
+        '409':
+          description: Alias já existe
+
+  /api/devices/aliases-db/{alias_name}:
+    get:
+      tags:
+        - Aliases
+      summary: Obter alias específico
+      description: Obtém informações de um alias específico pelo nome
+      operationId: getAliasByName
+      parameters:
+        - name: alias_name
+          in: path
+          description: Nome do alias
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Alias encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasResponse'
+        '404':
+          description: Alias não encontrado
+    patch:
+      tags:
+        - Aliases
+      summary: Atualizar alias
+      description: Atualiza um alias existente no pfSense e no banco local
+      operationId: updateAlias
+      parameters:
+        - name: alias_name
+          in: path
+          description: Nome do alias
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AliasUpdateRequest'
+            example:
+              id: 8
+              name: "teste_api_iot_edu_v2"
+              type: "host"
+              descr: "Alias de teste criado via API v2"
+              address: ["192.168.1.200", "192.168.1.201", "192.168.1.202"]
+              detail: ["Dispositivo de teste 1", "Dispositivo de teste 2", "Dispositivo de teste 3"]
+      responses:
+        '200':
+          description: Alias atualizado com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasResponse'
+        '400':
+          description: Dados inválidos
+        '404':
+          description: Alias não encontrado
+
+  /api/devices/aliases-db/{alias_name}/add-addresses:
+    post:
+      tags:
+        - Aliases
+      summary: Adicionar endereços ao alias
+      description: Adiciona novos endereços a um alias existente sem sobrescrever os existentes
+      operationId: addAddressesToAlias
+      parameters:
+        - name: alias_name
+          in: path
+          description: Nome do alias
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddAddressesRequest'
+            example:
+              new_addresses: ["192.168.1.203", "192.168.1.204"]
+              new_details: ["Dispositivo de teste 3", "Dispositivo de teste 4"]
+      responses:
+        '200':
+          description: Endereços adicionados com sucesso
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AliasResponse'
+        '400':
+          description: Dados inválidos
+        '404':
+          description: Alias não encontrado
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [healthy, unhealthy]
+          description: Status de saúde da API
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp da verificação
+        version:
+          type: string
+          description: Versão da API
+      required:
+        - status
+        - timestamp
+        - version
+
+    RootResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Mensagem de boas-vindas
+        version:
+          type: string
+          description: Versão da API
+        authentication:
+          type: object
+          properties:
+            saml:
+              type: boolean
+            oauth2:
+              type: boolean
+        endpoints:
+          type: object
+          description: Endpoints disponíveis
+        documentation:
+          type: string
+          description: URL da documentação
+
+    AuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        token:
+          type: string
+          description: Token JWT
+        user:
+          $ref: '#/components/schemas/User'
+
+    TokenVerifyResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        user:
+          $ref: '#/components/schemas/User'
+        expires_at:
+          type: string
+          format: date-time
+
+    AuthStatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [active, inactive, error]
+        saml_enabled:
+          type: boolean
+        oauth2_enabled:
+          type: boolean
+
+    DhcpSaveRequest:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          description: ID do servidor DHCP
+        id:
+          type: integer
+          description: ID do mapeamento no pfSense
+        mac:
+          type: string
+          pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+          description: Endereço MAC
+        ipaddr:
+          type: string
+          format: ipv4
+          description: Endereço IP
+        cid:
+          type: string
+          description: ID do cliente
+        hostname:
+          type: string
+          description: Nome do host
+        descr:
+          type: string
+          description: Descrição
+
+    DhcpSaveResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        servers_saved:
+          type: integer
+        mappings_saved:
+          type: integer
+        mappings_updated:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    DhcpServersResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        result:
+          type: object
+          properties:
+            code:
+              type: integer
+            status:
+              type: string
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/DhcpServer'
+
+    DhcpServer:
+      type: object
+      properties:
+        id:
+          type: string
+        interface:
+          type: string
+        enable:
+          type: boolean
+        range_from:
+          type: string
+          format: ipv4
+        range_to:
+          type: string
+          format: ipv4
+        staticmap:
+          type: array
+          items:
+            $ref: '#/components/schemas/StaticMapping'
+
+    StaticMapping:
+      type: object
+      properties:
+        parent_id:
+          type: string
+        id:
+          type: integer
+        mac:
+          type: string
+        ipaddr:
+          type: string
+          format: ipv4
+        cid:
+          type: string
+        hostname:
+          type: string
+        descr:
+          type: string
+
+    StaticMappingsResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        result:
+          type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/StaticMapping'
+
+    StaticMappingRequest:
+      type: object
+      properties:
+        parent_id:
+          type: string
+          default: "lan"
+        mac:
+          type: string
+          pattern: '^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$'
+        ipaddr:
+          type: string
+          format: ipv4
+        cid:
+          type: string
+        hostname:
+          type: string
+        descr:
+          type: string
+      required:
+        - parent_id
+        - mac
+        - ipaddr
+        - cid
+        - descr
+
+    StaticMappingResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        message:
+          type: string
+        mapping:
+          $ref: '#/components/schemas/StaticMapping'
+
+    DhcpStaticMappingDeleteResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indica se a operação foi bem-sucedida
+        message:
+          type: string
+          description: Mensagem descritiva do resultado
+        parent_id:
+          type: integer
+          description: ID do servidor DHCP pai
+        mapping_id:
+          type: integer
+          description: ID do mapeamento excluído
+        applied:
+          type: boolean
+          description: Se a exclusão foi aplicada imediatamente
+        data:
+          type: object
+          description: Dados adicionais da resposta do pfSense
+      required:
+        - success
+        - message
+        - parent_id
+        - mapping_id
+        - applied
+
+    StaticMappingCheckResponse:
+      type: object
+      properties:
+        exists:
+          type: boolean
+        mapping:
+          $ref: '#/components/schemas/StaticMapping'
+
+    DevicesResponse:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    Device:
+      type: object
+      properties:
+        id:
+          type: integer
+        server_id:
+          type: string
+        pf_id:
+          type: integer
+        mac:
+          type: string
+        ipaddr:
+          type: string
+          format: ipv4
+        cid:
+          type: string
+        hostname:
+          type: string
+        descr:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    DeviceResponse:
+      type: object
+      properties:
+        device:
+          $ref: '#/components/schemas/Device'
+
+    AllDevicesResponse:
+      type: object
+      properties:
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        statistics:
+          $ref: '#/components/schemas/DeviceStatistics'
+
+    DeviceStatistics:
+      type: object
+      properties:
+        total_devices:
+          type: integer
+        active_devices:
+          type: integer
+        blocked_devices:
+          type: integer
+        pending_devices:
+          type: integer
+
+    DhcpStatisticsResponse:
+      type: object
+      properties:
+        total_mappings:
+          type: integer
+        active_mappings:
+          type: integer
+        ip_range:
+          type: object
+          properties:
+            start:
+              type: string
+              format: ipv4
+            end:
+              type: string
+              format: ipv4
+            total_ips:
+              type: integer
+            used_ips:
+              type: integer
+            free_ips:
+              type: integer
+
+    IpAddressesResponse:
+      type: object
+      properties:
+        range_info:
+          type: object
+          properties:
+            server_id:
+              type: string
+            interface:
+              type: string
+            range_from:
+              type: string
+              format: ipv4
+            range_to:
+              type: string
+              format: ipv4
+            total_ips:
+              type: integer
+            used_ips:
+              type: integer
+            free_ips:
+              type: integer
+            reserved_ips:
+              type: integer
+        ip_addresses:
+          type: array
+          items:
+            $ref: '#/components/schemas/IpAddress'
+
+    IpAddress:
+      type: object
+      properties:
+        ip:
+          type: string
+          format: ipv4
+        status:
+          type: string
+          enum: [free, used, reserved]
+        mac:
+          type: string
+        hostname:
+          type: string
+        description:
+          type: string
+        last_seen:
+          type: string
+          format: date-time
+
+    DeviceAssignmentRequest:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          description: ID do usuário
+        device_id:
+          type: integer
+          description: ID do dispositivo
+        notes:
+          type: string
+          description: Observações sobre a atribuição
+        assigned_by:
+          type: integer
+          description: ID do usuário que fez a atribuição
+      required:
+        - user_id
+        - device_id
+        - assigned_by
+
+    DeviceAssignmentResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        assignment:
+          $ref: '#/components/schemas/DeviceAssignment'
+        message:
+          type: string
+
+    DeviceAssignment:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        device_id:
+          type: integer
+        assigned_at:
+          type: string
+          format: date-time
+        assigned_by:
+          type: integer
+        notes:
+          type: string
+        is_active:
+          type: boolean
+
+    UserDevicesResponse:
+      type: object
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+        total_devices:
+          type: integer
+
+    DeviceUsersResponse:
+      type: object
+      properties:
+        device:
+          $ref: '#/components/schemas/Device'
+        users:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+        total_users:
+          type: integer
+
+    AssignmentsSearchResponse:
+      type: object
+      properties:
+        assignments:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceAssignment'
+        total:
+          type: integer
+
+    AssignmentStatisticsResponse:
+      type: object
+      properties:
+        total_assignments:
+          type: integer
+        active_assignments:
+          type: integer
+        inactive_assignments:
+          type: integer
+        users_with_devices:
+          type: integer
+        devices_assigned:
+          type: integer
+
+    AliasesSaveResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        aliases_saved:
+          type: integer
+        aliases_updated:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    AliasesResponse:
+      type: object
+      properties:
+        aliases:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alias'
+        total:
+          type: integer
+
+    Alias:
+      type: object
+      properties:
+        id:
+          type: integer
+        pf_id:
+          type: integer
+        name:
+          type: string
+        alias_type:
+          type: string
+          enum: [host, network, port, url, urltable]
+        descr:
+          type: string
+        address:
+          type: array
+          items:
+            type: string
+        detail:
+          type: array
+          items:
+            type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    AliasResponse:
+      type: object
+      properties:
+        alias:
+          $ref: '#/components/schemas/Alias'
+
+    AliasesStatisticsResponse:
+      type: object
+      properties:
+        total_aliases:
+          type: integer
+        by_type:
+          type: object
+          properties:
+            host:
+              type: integer
+            network:
+              type: integer
+            port:
+              type: integer
+            url:
+              type: integer
+            urltable:
+              type: integer
+
+    AliasCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+          enum: [host, network, port, url, urltable]
+        descr:
+          type: string
+        address:
+          type: array
+          items:
+            type: string
+        detail:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - type
+        - descr
+        - address
+
+    AliasUpdateRequest:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        type:
+          type: string
+          enum: [host, network, port, url, urltable]
+        descr:
+          type: string
+        address:
+          type: array
+          items:
+            type: string
+        detail:
+          type: array
+          items:
+            type: string
+      required:
+        - id
+        - name
+        - type
+        - descr
+        - address
+
+    AddAddressesRequest:
+      type: object
+      properties:
+        new_addresses:
+          type: array
+          items:
+            type: string
+        new_details:
+          type: array
+          items:
+            type: string
+      required:
+        - new_addresses
+
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+          format: email
+        nome:
+          type: string
+        instituicao:
+          type: string
+        permission:
+          type: string
+          enum: [USER, MANAGER]
+        ultimo_login:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        per_page:
+          type: integer
+        total:
+          type: integer
+        pages:
+          type: integer
+
+    ErrorResponse:
+      type: object
+      properties:
+        detail:
+          type: string
+          description: Descrição do erro
+        error_code:
+          type: string
+          description: Código do erro
+        timestamp:
+          type: string
+          format: date-time
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Token JWT obtido através da autenticação SAML ou OAuth2
+
+security:
+  - BearerAuth: []
+
+externalDocs:
+  description: Documentação adicional
+  url: https://github.com/iot-edu/api-documentation

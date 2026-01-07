@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""
+Script para testar a funcionalidade de atribuição automática de IPs com integração ao banco de dados
+"""
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from services_firewalls.ip_assignment_service import ip_assignment_service
+from db.models import DhcpStaticMapping
+from db.session import SessionLocal
+import config
+
+def test_ip_assignment_with_db():
+    """Testa a funcionalidade de atribuição de IPs com integração ao banco de dados"""
+    print("🧪 Testando Atribuição Automática de IPs com Banco de Dados")
+    print("=" * 60)
+    
+    # 1. Validar configuração
+    print("\n1. Validando configuração do range...")
+    is_valid, message = ip_assignment_service.validate_ip_range()
+    print(f"   ✅ Válido: {is_valid}")
+    print(f"   📝 Mensagem: {message}")
+    
+    if not is_valid:
+        print("   ❌ Configuração inválida. Verifique as variáveis de ambiente.")
+        return
+    
+    # 2. Mostrar informações do range
+    print("\n2. Informações do range configurado...")
+    info = ip_assignment_service.get_range_info()
+    print(f"   📊 Range: {info['range_start']} - {info['range_end']}")
+    print(f"   📈 Total de IPs: {info['total_ips']}")
+    print(f"   🚫 IPs excluídos: {info['excluded_ips']}")
+    print(f"   ✅ IPs disponíveis: {info['available_ips']}")
+    print(f"   🔒 IPs atribuídos: {info['assigned_ips']}")
+    
+    # 3. Verificar IPs no banco de dados
+    print("\n3. Verificando IPs no banco de dados...")
+    try:
+        db = SessionLocal()
+        try:
+            existing_mappings = db.query(DhcpStaticMapping).all()
+            print(f"   📋 Total de mapeamentos no banco: {len(existing_mappings)}")
+            
+            # Mostrar alguns exemplos
+            for i, mapping in enumerate(existing_mappings[:5]):
+                print(f"   📝 {i+1}. MAC: {mapping.mac}, IP: {mapping.ipaddr}, CID: {mapping.cid}")
+            
+            if len(existing_mappings) > 5:
+                print(f"   ... e mais {len(existing_mappings) - 5} mapeamentos")
+                
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"   ❌ Erro ao consultar banco de dados: {e}")
+    
+    # 4. Testar recarregamento do banco
+    print("\n4. Testando recarregamento do banco de dados...")
+    ip_assignment_service.refresh_from_db()
+    print("   ✅ IPs recarregados do banco de dados")
+    
+    # 5. Mostrar status após recarregamento
+    print("\n5. Status após recarregamento...")
+    info_after = ip_assignment_service.get_range_info()
+    print(f"   📊 IPs atribuídos: {info_after['assigned_ips']}")
+    print(f"   ✅ IPs disponíveis: {info_after['available_ips']}")
+    print(f"   🗄️ IPs carregados do banco: {len(info_after['assigned_list'])}")
+    
+    # 6. Testar atribuição de novos IPs
+    print("\n6. Testando atribuição de novos IPs...")
+    
+    # Atribuir alguns IPs
+    assigned_ips = []
+    for i in range(3):
+        ip = ip_assignment_service.assign_next_available_ip()
+        if ip:
+            assigned_ips.append(ip)
+            print(f"   ✅ IP {i+1} atribuído: {ip}")
+        else:
+            print(f"   ❌ Falha ao atribuir IP {i+1}")
+    
+    # 7. Mostrar IPs disponíveis
+    print("\n7. Listando IPs disponíveis...")
+    available = ip_assignment_service.get_available_ips(5)
+    print(f"   📋 Próximos 5 IPs disponíveis: {available}")
+    
+    # 8. Testar reserva de IP específico
+    print("\n8. Testando reserva de IP específico...")
+    test_ip = "192.168.100.50"
+    success = ip_assignment_service.reserve_ip(test_ip)
+    if success:
+        print(f"   ✅ IP {test_ip} reservado com sucesso")
+    else:
+        print(f"   ❌ Falha ao reservar IP {test_ip}")
+    
+    # 9. Testar liberação de IP
+    print("\n9. Testando liberação de IP...")
+    if assigned_ips:
+        ip_to_release = assigned_ips[0]
+        success = ip_assignment_service.release_ip(ip_to_release)
+        if success:
+            print(f"   ✅ IP {ip_to_release} liberado com sucesso")
+        else:
+            print(f"   ❌ Falha ao liberar IP {ip_to_release}")
+    
+    # 10. Mostrar status final
+    print("\n10. Status final...")
+    final_info = ip_assignment_service.get_range_info()
+    print(f"   📊 IPs atribuídos: {final_info['assigned_ips']}")
+    print(f"   ✅ IPs disponíveis: {final_info['available_ips']}")
+    print(f"   🗄️ IPs carregados do banco: {len([ip for ip in final_info['assigned_list'] if ip.startswith('192.168.100')])}")
+    
+    # 11. Verificar se IPs atribuídos estão realmente disponíveis
+    print("\n11. Verificando disponibilidade real...")
+    for ip in assigned_ips[1:]:  # Pular o primeiro que foi liberado
+        is_available = ip_assignment_service._is_ip_available(ip)
+        print(f"   {'✅' if is_available else '❌'} IP {ip}: {'Disponível' if is_available else 'Indisponível'}")
+    
+    print("\n🎉 Teste com banco de dados concluído!")
+
+if __name__ == "__main__":
+    test_ip_assignment_with_db()

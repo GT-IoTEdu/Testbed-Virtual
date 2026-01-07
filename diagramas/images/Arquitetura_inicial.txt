@@ -1,0 +1,40 @@
+@startuml
+!includeurl https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+Person(user, "Usuário CAFe", "Usuário das universidades via federação CAFe")
+
+System_Boundary(s1, "Plataforma de Registro IoT") {
+    ' Definindo os grupos primeiro
+    package "Frontend" <<dashed>> {
+        Container(web, "Frontend Web", "React/Vue", "Interface de cadastro de dispositivos")
+    }
+    
+    package "Backend" <<dashed>> {
+        Container(api, "API Backend", "FastAPI + Python", "Autentica usuário, valida [IP/máscara,descrição do dispositivo] e registra no pfSense")
+        Container(auth, "Serviço de Autenticação", "Python + OAuth2", "Realiza autenticação via CAFe")
+        Container(devreg, "Serviço de Registro de Dispositivos", "Python", "Registra dispositivos no pfSense via REST")
+        ContainerDb(logdb, "Banco de Logs", "PostgreSQL", "Auditoria de registros")
+        ContainerDb(usage_db, "Banco de Uso", "TimescaleDB", "Armazena padrões de tráfego dos dispositivos")
+    }
+    
+    package "Gerenciamento de Rede" <<dashed>> {
+        Container(pfsense, "pfSense", "Firewall com REST API habilitada")
+        Container(ai_monitor, "Sonda de IA", "Python/TensorFlow", "Analisa padrões de tráfego e detecta anomalias")
+    }
+}
+
+System_Ext(cafe, "Sistema CAFe", "Federação de Identidade Acadêmica")
+
+' Relacionamentos
+Rel(user, web, "Acessa via navegador")
+Rel(web, api, "Chama endpoints REST")
+Rel(api, auth, "Redireciona para autenticação CAFe")
+Rel(auth, cafe, "Autenticação federada", "OAuth2/SAML")
+Rel(api, devreg, "Solicita registro de dispositivo")
+Rel(devreg, pfsense, "POST /api/devices", "HTTPS + token")
+Rel(devreg, logdb, "Armazena log de operação")
+Rel(pfsense, usage_db, "Envia logs de tráfego", "Syslog/Telegraf")
+Rel(usage_db, ai_monitor, "Fornece dados para análise", "SQL/HTTPS")
+Rel(ai_monitor, pfsense, "Adiciona regras de mitigação", "REST API")
+Rel(ai_monitor, logdb, "Registra eventos suspeitos")
+@enduml

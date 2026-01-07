@@ -1,0 +1,84 @@
+# ==========================================
+# Local rules para Snort3 - Ataques e Logs
+# ==========================================
+
+# ========================================
+# 1. DoS HTTP Attack
+# ========================================
+
+# Detecta alto volume de requisições HTTP GET
+alert tcp any any -> any 80 (msg:"ATAQUE -> HTTP DoS GET Flood"; content:"GET"; http_method; detection_filter:track by_src, count 20, seconds 5; sid:1000021; rev:1;)
+
+# Detecta POST flood
+alert tcp any any -> any 80 (msg:"ATAQUE -> HTTP DoS POST Flood"; content:"POST"; http_method; detection_filter:track by_src, count 10, seconds 5; sid:1000022; rev:1;)
+
+# Detecta headers grandes suspeitos
+alert tcp any any -> any 80 (msg:"ATAQUE -> HTTP Large Header"; content:"X-Custom-Header"; http_header; sid:1000023; rev:1;)
+
+# Detecta User-Agent de teste de DoS
+alert tcp any any -> any 80 (msg:"ATAQUE -> HTTP DoS User-Agent"; content:"DoS-Test"; http_header; sid:1000024; rev:1;)
+
+# ========================================      
+# 2. SSH Brute Force Attack
+# ========================================
+
+# Detecta múltiplas tentativas SSH (sintaxe simplificada)
+alert tcp any any -> any 22 (msg:"ATAQUE -> SSH Brute Force"; content:"SSH-2.0"; detection_filter:track by_src, count 10, seconds 60; sid:1000025; rev:1;)
+
+# Detecta tentativas rápidas de conexão SSH
+alert tcp any any -> any 22 (msg:"ATAQUE -> SSH Multiple Connections"; flags:S; detection_filter:track by_src, count 20, seconds 30; sid:1000026; rev:1;)
+
+# ========================================
+# 3. ICMP Ping Flood Attack
+# ========================================
+
+# Detecta ping flood
+alert icmp any any -> any any (msg:"ATAQUE -> ICMP Ping Flood"; itype:8; detection_filter:track by_src, count 50, seconds 5; sid:1000027; rev:1;)
+
+# Log simples de ping (para comparação)
+alert icmp any any -> any any (msg:"LOG -> PING REALIZADO"; itype:8; sid:1000028; rev:1;)
+
+# ========================================
+# 4. SQL Injection Attack
+# ========================================
+
+# Detecta UNION SELECT (sintaxe básica)
+alert tcp any any -> any 80 (msg:"ATAQUE -> SQL Injection UNION"; content:"union"; content:"select"; sid:1000029; rev:1;)
+
+# Detecta OR 1=1 (sintaxe básica)
+alert tcp any any -> any 80 (msg:"ATAQUE -> SQL Injection OR 1=1"; content:"or"; content:"1=1"; sid:1000030; rev:1;)
+
+# Detecta comment injection
+alert tcp any any -> any 80 (msg:"ATAQUE -> SQL Comment Injection"; content:"--"; http_uri; sid:1000031; rev:1;)
+
+# Detecta aspas simples na URI (comum em SQLi)
+alert tcp any any -> any 80 (msg:"ATAQUE -> SQL Injection Quote"; content:"'"; http_uri; sid:1000032; rev:1;)
+
+# ========================================
+# 5. DNS Tunneling Attack
+# ========================================
+
+# Detecta múltiplas queries DNS
+alert udp any any -> any 53 (msg:"ATAQUE -> DNS Tunneling High Volume"; detection_filter:track by_src, count 50, seconds 10; sid:1000033; rev:1;)
+
+# Detecta queries DNS para 8.8.8.8
+alert udp any any -> 8.8.8.8 53 (msg:"ATAQUE -> DNS Queries to 8.8.8.8"; detection_filter:track by_src, count 20, seconds 10; sid:1000034; rev:1;)
+
+# Detecta domínios muito grandes
+alert udp any any -> any 53 (msg:"ATAQUE -> DNS Tunneling Pacote UDP Muito Grande"; flow:to_server; dsize:>200; classtype:policy-violation; sid:1000035; rev:1;)
+
+# ========================================
+# LOGS GERAIS
+# ========================================
+
+# Log HTTP GET normal
+alert tcp any any -> any 80 (msg:"LOG -> HTTP GET"; content:"GET"; http_method; sid:1000036; rev:1;)
+
+# Log HTTP POST normal
+alert tcp any any -> any 80 (msg:"LOG -> HTTP POST"; content:"POST"; http_method; sid:1000037; rev:1;)
+
+# Log SSH connection (sintaxe básica)
+alert tcp any any -> any 22 (msg:"LOG -> SSH Connection"; content:"SSH-2.0"; sid:1000038; rev:1;)
+
+# Log DNS query
+alert udp any any -> any 53 (msg:"LOG -> DNS Query"; sid:1000039; rev:1;)

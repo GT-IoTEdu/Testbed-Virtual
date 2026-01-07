@@ -1,0 +1,81 @@
+networks:
+  vm-bridge:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: br-vm-access
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+          gateway: 172.20.0.1  # Add this line
+services:
+  db:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: iot_edu
+      MYSQL_USER: IoT_EDU
+      MYSQL_PASSWORD: root
+    networks:
+      vm-bridge:
+        ipv4_address: 172.20.0.10
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file: backend/.env
+    ports:
+      - "8000:8000"
+    networks:
+      vm-bridge:
+        ipv4_address: 172.20.0.20
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Fixed: moved outside networks
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    env_file: backend/.env
+    networks:
+      vm-bridge:
+        ipv4_address: 172.20.0.30
+    extra_hosts:  # Add this to frontend too if it needs to access host
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+    
+  zeek-monitor:  
+    build: ./zeek-docker
+    network_mode: host
+    privileged: true
+    environment:
+      ZEEK_INTERFACE: br-vm-access
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
+    volumes:
+      - ./zeek-logs:/opt/zeek/logs
+    ports:
+      - "47760:47760"  
+      - "80:80"
+      - "8090:8090"      
+    restart: unless-stopped
+
+
+ 
+ 
+  ataque:
+    build: ./Docker_ataque
+    env_file: backend/.env
+    networks:
+      vm-bridge:
+        ipv4_address: 172.20.0.60
+    extra_hosts:  # Add this to frontend too if it needs to access host
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+      - zeek-monitor
+    restart: unless-stopped

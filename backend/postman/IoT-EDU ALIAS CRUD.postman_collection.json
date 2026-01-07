@@ -1,0 +1,308 @@
+{
+	"info": {
+		"_postman_id": "c24b7d77-ce77-4ac5-be00-edf9358f2e45",
+		"name": "IoT-EDU ALIAS CRUD",
+		"description": "Coleção completa para testar o sistema de gerenciamento de aliases do pfSense",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "24362974",
+		"_collection_link": "https://winter-flare-998473.postman.co/workspace/6ff751fe-8b15-49fa-8e14-7bdf03b61f90/collection/24362974-c24b7d77-ce77-4ac5-be00-edf9358f2e45?action=share&source=collection_link&creator=24362974"
+	},
+	"item": [
+		{
+			"name": "1. Salvar Aliases do pfSense",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{api_base}}/aliases-db/save",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"save"
+					]
+				},
+				"description": "Sincroniza todos os aliases do pfSense com o banco de dados local"
+			},
+			"response": [
+				{
+					"name": "1. Salvar Aliases do pfSense",
+					"originalRequest": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"url": {
+							"raw": "{{api_base}}/aliases-db/save",
+							"host": [
+								"{{api_base}}"
+							],
+							"path": [
+								"aliases-db",
+								"save"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Tue, 02 Sep 2025 01:30:25 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "217"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"status\": \"success\",\n    \"aliases_saved\": 1,\n    \"aliases_updated\": 9,\n    \"addresses_saved\": 1,\n    \"addresses_updated\": 14,\n    \"timestamp\": \"2025-09-02T01:30:26.491593\",\n    \"pfsense_saved\": true,\n    \"pfsense_message\": \"Aliases sincronizados com sucesso\"\n}"
+				}
+			]
+		},
+		{
+			"name": "2. Listar Aliases",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{api_base}}/aliases-db",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db"
+					]
+				},
+				"description": "Lista todos os aliases armazenados no banco de dados local"
+			},
+			"response": []
+		},
+		{
+			"name": "3. Buscar Aliases",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{api_base}}/aliases-db/search?query=Teste",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"search"
+					],
+					"query": [
+						{
+							"key": "query",
+							"value": "Teste",
+							"description": "Termo de busca"
+						}
+					]
+				},
+				"description": "Busca aliases por nome ou descrição"
+			},
+			"response": []
+		},
+		{
+			"name": "4. Estatísticas de Aliases",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"url": {
+					"raw": "{{api_base}}/aliases-db/statistics",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"statistics"
+					]
+				},
+				"description": "Obtém estatísticas sobre os aliases no banco de dados"
+			},
+			"response": []
+		},
+		{
+			"name": "5. Criar Novo Alias",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"name\": \"meu_novo_alias\",\n  \"alias_type\": \"host\",\n  \"descr\": \"Descrição do meu novo alias\",\n  \"addresses\": [\n    {\n      \"address\": \"192.168.1.100\",\n      \"detail\": \"Dispositivo principal\"\n    },\n    {\n      \"address\": \"192.168.1.101\",\n      \"detail\": \"Dispositivo secundário\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{api_base}}/aliases-db/create",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"create"
+					]
+				},
+				"description": "Cria um novo alias no pfSense e salva no banco de dados local"
+			},
+			"response": []
+		},
+		{
+			"name": "6. Atualizar Alias - Descrição",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"descr\": \"Nova descrição do alias\"\n}"
+				},
+				"url": {
+					"raw": "{{api_base}}/aliases-db/Teste_API_IoT_EDU",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"Teste_API_IoT_EDU"
+					]
+				},
+				"description": "Atualiza apenas a descrição de um alias existente"
+			},
+			"response": []
+		},
+		{
+			"name": "7. Atualizar Alias - Endereços",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"addresses\": [\n    {\n      \"address\": \"192.168.1.200\",\n      \"detail\": \"Dispositivo atualizado 1\"\n    },\n    {\n      \"address\": \"192.168.1.201\",\n      \"detail\": \"Dispositivo atualizado 2\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{api_base}}/aliases-db/Teste_API_IoT_EDU",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"Teste_API_IoT_EDU"
+					]
+				},
+				"description": "Atualiza apenas os endereços de um alias existente"
+			},
+			"response": []
+		},
+		{
+			"name": "8. Atualizar Alias - Completo",
+			"request": {
+				"method": "PATCH",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"alias_type\": \"network\",\n  \"descr\": \"Alias de rede atualizado\",\n  \"addresses\": [\n    {\n      \"address\": \"192.168.1.0/24\",\n      \"detail\": \"Rede principal\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{api_base}}/aliases-db/Teste_API_IoT_EDU",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"Teste_API_IoT_EDU"
+					]
+				},
+				"description": "Atualiza tipo, descrição e endereços de um alias existente"
+			},
+			"response": []
+		},
+		{
+			"name": "9. Adicionar IPs a Alias Existente",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"addresses\": [\n    {\n      \"address\": \"192.168.1.210\",\n      \"detail\": \"Dispositivo adicional 1\"\n    },\n    {\n      \"address\": \"192.168.1.211\",\n      \"detail\": \"Dispositivo adicional 2\"\n    }\n  ]\n}"
+				},
+				"url": {
+					"raw": "{{api_base}}/aliases-db/authorized_devices/add-addresses",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"aliases-db",
+						"authorized_devices",
+						"add-addresses"
+					]
+				},
+				"description": "Adiciona novos endereços IP a um alias existente sem substituir os atuais"
+			},
+			"response": []
+		}
+	],
+	"variable": [
+		{
+			"key": "api_base",
+			"value": "http://127.0.0.1:8000/api/devices",
+			"type": "string"
+		}
+	]
+}

@@ -1,0 +1,77 @@
+# ==========================================
+# Local rules for lab testing
+# SIDs >= 1000000 to avoid conflicts
+# ==========================================
+
+# ===============================
+# SSH Brute Force Detection
+# ===============================
+
+# 1) SSH brute-force: many SYNs to TCP/22 from same src (tentativas rápidas)
+alert tcp any any -> $HOME_NET 22 (msg:"LOCAL SSH Brute-Force - multiple SYNs to SSH port"; flags:S; threshold:type both, track by_src, count 5, seconds 30; sid:1000001; rev:1;)
+
+# 2) SSH brute-force: libssh/header based (complementa a anterior)
+alert tcp $EXTERNAL_NET any -> $HOME_NET 22 (msg:"LOCAL SSH LibSSH Frequent Connections - possible brute"; flow:established,to_server; content:"SSH-"; content:"libssh"; within:20; threshold:type both, track by_src, count 2, seconds 20; sid:1000002; rev:1;)
+
+# 1;3B===============================
+# Ping Flood Detection
+# ===============================
+
+# 3) ICMP flood: many ICMP packets towards same dst
+alert icmp any any -> $HOME_NET any (msg:"LOCAL ICMP Flood - many ICMP to single dst"; threshold:type both, track by_dst, count 200, seconds 10; sid:1000003; rev:1;)
+
+# 4) ICMP large payload flood
+alert icmp any any -> $HOME_NET any (msg:"LOCAL ICMP Large Payload Flood (>1000 bytes)"; dsize:>1000; threshold:type both, track by_src, count 20, seconds 10; sid:1000004; rev:1;)
+
+# ===============================
+# SQL Injection Detection
+# ====3B===========================
+
+# 5) SQLi - SELECT
+alert http any any -> any any (msg:"LOCAL SQLi attempt - classic keywords"; content:"select"; nocase; http_uri; sid:1000005; rev:1;)
+
+# 6) SQLi - OR 1==1
+alert http any any -> any any (msg:"LOCAL SQLi attempt - OR 1=1"; content:"or 1=1"; nocase; http_uri; sid:1000006; rev:1;)
+
+# 7) SQLi - Comment Sequence
+alert http any any -> any any (msg:"LOCAL SQLi attempt - comment sequence"; content:"--"; http_uri; sid:1000007; rev:1;)
+
+
+# ===============================
+# HTTP DoS Detection
+# ===============================
+
+# 8) ApacheBench + small threshold for flood behaviour (adjust counts for lab)
+alert http any any -> any any (msg:"LOCAL HTTP GET Flood - ApacheBench UA (threshold)"; flow:to_server,established; content:"ApacheBench"; http_user_agent; nocase; threshold:type both, track by_src, count 10, seconds 5; sid:1000008; rev:1;)
+
+# 9) Excessive GETs - count many GET requests from same source (method match needs content first)
+alert http any any -> any any (msg:"LOCAL HTTP Flood - Excessive GETs"; flow:to_server,established; content:"GET"; http_method; threshold:type both, track by_src, count 100, seconds 5; sid:1000009; rev:1;)
+
+# 10) Header flood: specific X-Custom-Header (app-layer)
+alert http any any -> any any (msg:"LOCAL HTTP Large Header Flood (X-Custom-Header)"; flow:to_server,established; content:"X-Custom-Header"; http_header; nocase; threshold:type both, track by_src, count 20, seconds 10; sid:1000010; rev:2;)
+
+# 11) Packet-level fallback for huge TCP payloads to HTTP port (no http_* keywords)
+alert tcp any any -> any 80 (msg:"LOCAL TCP Large Packet to HTTP port (possible header flood)"; dsize:>1400; threshold:type both, track by_src, count 20, seconds 10; sid:1000011; rev:2;)
+
+# 12) Generic HTTP high RPS fallback
+alert http any any -> any any (msg:"LOCAL Generic HTTP Flood High RPS"; flow:to_server,established; threshold:type both, track by_src, count 500, seconds 10; sid:1000012; rev:1;)
+
+
+
+# ===============================
+# DNS Tunneling Detection (Refinado)
+# ===============================
+
+# 13) DNS - Label suspeita (Hexadecimal Longo - ex: Cobalt Strike/DNSStager)
+# Alterei para focar no buffer da query (dns.query) para maior precisão
+alert dns any any -> any any (msg:"LOCAL DNS Tunneling - Potential Encoded Subdomain"; dns.query; pcre:"/([0-9a-z]{12,64})\./i"; sid:1000013; rev:3;)
+
+# 14) DNS – Detecta respostas de erro NXDOMAIN (Tunneling ou DGA)
+alert dns any any -> any any (msg:"LOCAL DNS Tunneling - High NXDOMAIN rate"; flow:to_client; dns.rcode:3; threshold:type both, track by_dst, count 20, seconds 10; sid:1000014; rev:3;)
+
+
+# 15) DNS - Alto volume de consultas (Exfiltração rápida)
+alert dns any any -> any any (msg:"LOCAL DNS Tunneling - Excessive Query Rate"; threshold:type both, track by_src, count 100, seconds 10; sid:1000015; rev:2;)
+
+# REGRA DE DEBUG (Adicione isso no fim do arquivo da foto)
+alert dns any any -> any any (msg:"DEBUG - NXDOMAIN ENCONTRADO"; dns.rcode:3; sid:999999; rev:1;)

@@ -1,0 +1,21 @@
+[Unit]
+Description=Gunicorn daemon for IoT-EDU SAML CAFe
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/iot_edu
+Environment="PATH=/opt/iot_edu/venv/bin"
+ExecStart=/opt/iot_edu/venv/bin/gunicorn \
+          --config /opt/iot_edu/backend/config/gunicorn/prod.py \
+          sp_django.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target 

@@ -1,0 +1,23 @@
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-dotenv==1.0.0
+authlib==1.2.1
+requests==2.31.0
+pydantic==2.5.0
+sqlalchemy==2.0.23
+mysqlclient==2.2.0
+PyJWT==2.8.0
+xmlsec
+# Dependências para SAML CAFe
+django==4.2.23
+djangosaml2==1.5.7
+pysaml2==7.4.1
+cryptography==41.0.7
+pymysql 
+itsdangerous
+httpx
+google-auth-oauthlib
+# Dependências adicionais para autenticação
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+

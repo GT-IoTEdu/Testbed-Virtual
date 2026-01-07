@@ -1,0 +1,634 @@
+{
+	"info": {
+		"_postman_id": "5e18fc07-5f05-4b00-86e6-1c157c2b8398",
+		"name": "IoT-EDU DHCP CRUD",
+		"description": "Coleção para testar o endpoint de salvamento edição e exclusão de dados DHCP",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "24362974",
+		"_collection_link": "https://winter-flare-998473.postman.co/workspace/6ff751fe-8b15-49fa-8e14-7bdf03b61f90/collection/24362974-5e18fc07-5f05-4b00-86e6-1c157c2b8398?action=share&source=collection_link&creator=24362974"
+	},
+	"item": [
+		{
+			"name": "1. Salvar Dados DHCP no Banco",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"mac\": \"d8:e0:e1:02:c1:a6\",\n  \"ipaddr\": \"10.30.30.7\",\n  \"cid\": \"WEBCAM\",\n  \"descr\": \"Webcam externa\"\n}"
+				},
+				"url": {
+					"raw": "{{api_base}}/dhcp/save",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"save"
+					]
+				},
+				"description": "Endpoint que salva dados DHCP no banco de dados com parâmetros fornecidos pelo usuário.\n\nParâmetros obrigatórios:\n- mac: Endereço MAC do dispositivo\n- ipaddr: Endereço IP do dispositivo\n- cid: ID do cliente (será replicado para hostname)\n- descr: Descrição do dispositivo\n\nExemplo de dados que serão salvos:\n{\n  \"parent_id\": \"lan\",\n  \"id\": 1,\n  \"mac\": \"bc:24:11:2c:0f:31\",\n  \"ipaddr\": \"10.30.30.10\",\n  \"cid\": \"lubuntu-live\",\n  \"hostname\": \"lubuntu-live\",\n  \"descr\": \"lubuntu-live-proxmox\"\n}"
+			},
+			"response": []
+		},
+		{
+			"name": "2. Verificar Dados Salvos - Listar Dispositivos",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_base}}/dhcp/devices?page=1&per_page=20",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"devices"
+					],
+					"query": [
+						{
+							"key": "page",
+							"value": "1"
+						},
+						{
+							"key": "per_page",
+							"value": "20"
+						}
+					]
+				},
+				"description": "Lista os dispositivos DHCP salvos no banco de dados para verificar se o salvamento foi bem-sucedido."
+			},
+			"response": [
+				{
+					"name": "2. Verificar Dados Salvos - Listar Dispositivos",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/api/devices/dhcp/devices?page=1&per_page=10",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"api",
+								"devices",
+								"dhcp",
+								"devices"
+							],
+							"query": [
+								{
+									"key": "page",
+									"value": "1"
+								},
+								{
+									"key": "per_page",
+									"value": "10"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 01 Sep 2025 23:14:28 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "2278"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"devices\": [\n        {\n            \"id\": 1,\n            \"server_id\": 1,\n            \"pf_id\": 0,\n            \"mac\": \"bc:24:11:68:fb:77\",\n            \"ipaddr\": \"10.30.30.3\",\n            \"cid\": \"openvas\",\n            \"hostname\": \"openvas\",\n            \"descr\": \"openvas\",\n            \"created_at\": \"2025-09-01T14:36:49\",\n            \"updated_at\": \"2025-09-01T15:17:08\"\n        },\n        {\n            \"id\": 2,\n            \"server_id\": 1,\n            \"pf_id\": 1,\n            \"mac\": \"bc:24:11:2c:0f:31\",\n            \"ipaddr\": \"10.30.30.10\",\n            \"cid\": \"lubuntu-live\",\n            \"hostname\": \"\",\n            \"descr\": \"lubuntu-live-proxmox\",\n            \"created_at\": \"2025-09-01T14:36:49\",\n            \"updated_at\": \"2025-09-01T15:17:08\"\n        },\n        {\n            \"id\": 3,\n            \"server_id\": 1,\n            \"pf_id\": 2,\n            \"mac\": \"bc:24:11:d6:08:ee\",\n            \"ipaddr\": \"10.30.30.40\",\n            \"cid\": \"ubuntu8\",\n            \"hostname\": \"ubuntu8\",\n            \"descr\": \"ubuntu8\",\n            \"created_at\": \"2025-09-01T14:36:49\",\n            \"updated_at\": \"2025-09-01T15:17:08\"\n        },\n        {\n            \"id\": 4,\n            \"server_id\": 1,\n            \"pf_id\": 5,\n            \"mac\": \"38:01:95:3a:da:bc\",\n            \"ipaddr\": \"10.30.30.81\",\n            \"cid\": \"tv-dsu\",\n            \"hostname\": \"tv-dsu\",\n            \"descr\": \"tv-dsu\",\n            \"created_at\": \"2025-09-01T14:36:49\",\n            \"updated_at\": \"2025-09-01T20:09:14\"\n        },\n        {\n            \"id\": 5,\n            \"server_id\": 1,\n            \"pf_id\": 6,\n            \"mac\": \"e0:48:24:6f:40:ab\",\n            \"ipaddr\": \"10.30.30.88\",\n            \"cid\": \"garmin5\",\n            \"hostname\": \"vivoactive5\",\n            \"descr\": \"garmin-vivoactive5\",\n            \"created_at\": \"2025-09-01T14:36:49\",\n            \"updated_at\": \"2025-09-01T20:09:14\"\n        },\n        {\n            \"id\": 6,\n            \"server_id\": 1,\n            \"pf_id\": 7,\n            \"mac\": \"d4:5b:51:a1:0e:70\",\n            \"ipaddr\": \"10.30.30.99\",\n            \"cid\": \"motog55\",\n            \"hostname\": \"motog55\",\n            \"descr\": \"motog55\",\n            \"created_at\": \"2025-09-01T14:36:49\",\n            \"updated_at\": \"2025-09-01T20:09:14\"\n        },\n        {\n            \"id\": 7,\n            \"server_id\": 1,\n            \"pf_id\": 8,\n            \"mac\": \"08:00:27:30:94:87\",\n            \"ipaddr\": \"10.30.30.250\",\n            \"cid\": \"sensor-ruminantes\",\n            \"hostname\": \"sensor-ruminantes\",\n            \"descr\": \"Cluster Kubernetes\",\n            \"created_at\": \"2025-09-01T14:36:49\",\n            \"updated_at\": \"2025-09-01T20:09:14\"\n        },\n        {\n            \"id\": 8,\n            \"server_id\": 1,\n            \"pf_id\": 7,\n            \"mac\": \"c0:25:e9:e3:a7:7c\",\n            \"ipaddr\": \"10.30.30.44\",\n            \"cid\": \"Notebook\",\n            \"hostname\": \"Notebook\",\n            \"descr\": \"Notebook do lab 5\",\n            \"created_at\": \"2025-09-01T19:49:01\",\n            \"updated_at\": \"2025-09-01T19:55:40\"\n        },\n        {\n            \"id\": 9,\n            \"server_id\": 1,\n            \"pf_id\": 3,\n            \"mac\": \"aa:bb:cc:dd:ee:ff\",\n            \"ipaddr\": \"10.30.30.50\",\n            \"cid\": \"test-device\",\n            \"hostname\": \"test-device\",\n            \"descr\": \"Dispositivo de teste corrigido\",\n            \"created_at\": \"2025-09-01T19:57:16\",\n            \"updated_at\": \"2025-09-01T20:09:14\"\n        },\n        {\n            \"id\": 10,\n            \"server_id\": 1,\n            \"pf_id\": 4,\n            \"mac\": \"11:22:33:44:55:66\",\n            \"ipaddr\": \"10.30.30.60\",\n            \"cid\": \"final-test\",\n            \"hostname\": \"final-test\",\n            \"descr\": \"Teste final - dispositivo novo\",\n            \"created_at\": \"2025-09-01T19:58:36\",\n            \"updated_at\": \"2025-09-01T20:09:14\"\n        }\n    ],\n    \"total\": 10,\n    \"page\": 1,\n    \"per_page\": 10,\n    \"has_next\": false,\n    \"has_prev\": false\n}"
+				}
+			]
+		},
+		{
+			"name": "3. Buscar Dispositivo Específico por IP",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_base}}/dhcp/devices/ip/10.30.30.44",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"devices",
+						"ip",
+						"10.30.30.44"
+					]
+				},
+				"description": "Busca o dispositivo específico do exemplo por IP para verificar se foi salvo corretamente."
+			},
+			"response": [
+				{
+					"name": "3. Buscar Dispositivo Específico por IP",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/api/devices/dhcp/devices/ip/10.30.30.44",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"api",
+								"devices",
+								"dhcp",
+								"devices",
+								"ip",
+								"10.30.30.44"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 01 Sep 2025 23:15:05 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "500"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"device\": {\n        \"id\": 8,\n        \"server_id\": 1,\n        \"pf_id\": 7,\n        \"mac\": \"c0:25:e9:e3:a7:7c\",\n        \"ipaddr\": \"10.30.30.44\",\n        \"cid\": \"Notebook\",\n        \"hostname\": \"Notebook\",\n        \"descr\": \"Notebook do lab 5\",\n        \"created_at\": \"2025-09-01T19:49:01\",\n        \"updated_at\": \"2025-09-01T19:55:40\"\n    },\n    \"server\": {\n        \"id\": 1,\n        \"server_id\": \"lan\",\n        \"interface\": \"lan\",\n        \"enable\": true,\n        \"range_from\": \"10.30.30.254\",\n        \"range_to\": \"10.30.30.254\",\n        \"domain\": \"\",\n        \"gateway\": \"\",\n        \"dnsserver\": null,\n        \"created_at\": \"2025-09-01T14:36:49\",\n        \"updated_at\": \"2025-09-01T20:02:44\"\n    },\n    \"is_duplicate\": false,\n    \"duplicates\": []\n}"
+				}
+			]
+		},
+		{
+			"name": "4. Buscar Dispositivo Específico por MAC",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_base}}/dhcp/devices/mac/c0:25:e9:e3:a7:7c",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"devices",
+						"mac",
+						"c0:25:e9:e3:a7:7c"
+					]
+				},
+				"description": "Busca o dispositivo específico do exemplo por MAC para verificar se foi salvo corretamente."
+			},
+			"response": [
+				{
+					"name": "4. Buscar Dispositivo Específico por MAC",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/api/devices/dhcp/devices/mac/c0:25:e9:e3:a7:7c",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"api",
+								"devices",
+								"dhcp",
+								"devices",
+								"mac",
+								"c0:25:e9:e3:a7:7c"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 01 Sep 2025 23:15:39 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "500"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"device\": {\n        \"id\": 8,\n        \"server_id\": 1,\n        \"pf_id\": 7,\n        \"mac\": \"c0:25:e9:e3:a7:7c\",\n        \"ipaddr\": \"10.30.30.44\",\n        \"cid\": \"Notebook\",\n        \"hostname\": \"Notebook\",\n        \"descr\": \"Notebook do lab 5\",\n        \"created_at\": \"2025-09-01T19:49:01\",\n        \"updated_at\": \"2025-09-01T19:55:40\"\n    },\n    \"server\": {\n        \"id\": 1,\n        \"server_id\": \"lan\",\n        \"interface\": \"lan\",\n        \"enable\": true,\n        \"range_from\": \"10.30.30.254\",\n        \"range_to\": \"10.30.30.254\",\n        \"domain\": \"\",\n        \"gateway\": \"\",\n        \"dnsserver\": null,\n        \"created_at\": \"2025-09-01T14:36:49\",\n        \"updated_at\": \"2025-09-01T20:02:44\"\n    },\n    \"is_duplicate\": false,\n    \"duplicates\": []\n}"
+				}
+			]
+		},
+		{
+			"name": "5. Ver Estatísticas dos Dispositivos",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_base}}/dhcp/statistics",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"statistics"
+					]
+				},
+				"description": "Mostra estatísticas dos dispositivos DHCP salvos no banco de dados."
+			},
+			"response": [
+				{
+					"name": "5. Ver Estatísticas dos Dispositivos",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/api/devices/dhcp/statistics",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"api",
+								"devices",
+								"dhcp",
+								"statistics"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 01 Sep 2025 23:15:48 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "120"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"total_devices\": 10,\n    \"total_servers\": 2,\n    \"devices_by_server\": {\n        \"lan\": 10,\n        \"wan\": 0\n    },\n    \"last_update\": \"2025-09-01T20:15:49.252732\"\n}"
+				}
+			]
+		},
+		{
+			"name": "6. Buscar Dispositivos por Termo",
+			"request": {
+				"method": "GET",
+				"header": [],
+				"url": {
+					"raw": "{{api_base}}/dhcp/devices/search?query=Notebook",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"devices",
+						"search"
+					],
+					"query": [
+						{
+							"key": "query",
+							"value": "Notebook"
+						}
+					]
+				},
+				"description": "Busca dispositivos que contenham o termo 'lubuntu' para verificar se o dispositivo do exemplo foi encontrado."
+			},
+			"response": [
+				{
+					"name": "6. Buscar Dispositivos por Termo",
+					"originalRequest": {
+						"method": "GET",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/api/devices/dhcp/devices/search?query=Notebook",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"api",
+								"devices",
+								"dhcp",
+								"devices",
+								"search"
+							],
+							"query": [
+								{
+									"key": "query",
+									"value": "Notebook"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Mon, 01 Sep 2025 23:16:07 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "267"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"devices\": [\n        {\n            \"id\": 8,\n            \"server_id\": 1,\n            \"pf_id\": 7,\n            \"mac\": \"c0:25:e9:e3:a7:7c\",\n            \"ipaddr\": \"10.30.30.44\",\n            \"cid\": \"Notebook\",\n            \"hostname\": \"Notebook\",\n            \"descr\": \"Notebook do lab 5\",\n            \"created_at\": \"2025-09-01T19:49:01\",\n            \"updated_at\": \"2025-09-01T19:55:40\"\n        }\n    ],\n    \"total_found\": 1,\n    \"query\": \"Notebook\"\n}"
+				}
+			]
+		},
+		{
+			"name": "Excluir mapeamento DHCP",
+			"request": {
+				"method": "DELETE",
+				"header": [],
+				"url": {
+					"raw": "{{api_base}}/dhcp/static_mapping?parent_id=lan&mapping_id=1&apply=true",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"static_mapping"
+					],
+					"query": [
+						{
+							"key": "parent_id",
+							"value": "lan"
+						},
+						{
+							"key": "mapping_id",
+							"value": "1"
+						},
+						{
+							"key": "apply",
+							"value": "true"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Sincronização ID PFSemse com base local",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"url": {
+					"raw": "http://127.0.0.1:8000/api/devices/dhcp/sync",
+					"protocol": "http",
+					"host": [
+						"127",
+						"0",
+						"0",
+						"1"
+					],
+					"port": "8000",
+					"path": [
+						"api",
+						"devices",
+						"dhcp",
+						"sync"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "Sincronização de IDs do pfSense concluída com sucesso",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"url": {
+							"raw": "http://127.0.0.1:8000/api/devices/dhcp/sync",
+							"protocol": "http",
+							"host": [
+								"127",
+								"0",
+								"0",
+								"1"
+							],
+							"port": "8000",
+							"path": [
+								"api",
+								"devices",
+								"dhcp",
+								"sync"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Tue, 02 Sep 2025 21:40:15 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "248"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"status\": \"success\",\n    \"message\": \"Sincronização de IDs do pfSense concluída com sucesso\",\n    \"sync_result\": {\n        \"status\": \"success\",\n        \"servers_created\": 1,\n        \"mappings_synced\": 10,\n        \"mappings_created\": 1,\n        \"mappings_updated\": 0,\n        \"timestamp\": \"2025-09-02T18:40:16.001188\"\n    }\n}"
+				}
+			]
+		},
+		{
+			"name": "Atualizar Dados DHCP",
+			"request": {
+				"method": "PATCH",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"descr\": \"Teste de atualização via IoT_API\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "{{api_base}}/dhcp/static_mapping?parent_id=lan&mapping_id=1&apply=false",
+					"host": [
+						"{{api_base}}"
+					],
+					"path": [
+						"dhcp",
+						"static_mapping"
+					],
+					"query": [
+						{
+							"key": "parent_id",
+							"value": "lan"
+						},
+						{
+							"key": "mapping_id",
+							"value": "1"
+						},
+						{
+							"key": "apply",
+							"value": "false"
+						}
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "atualizado com sucesso no pfSense e banco de dados",
+					"originalRequest": {
+						"method": "PATCH",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"descr\": \"Teste de atualização via IoT_API\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "{{api_base}}/dhcp/static_mapping?parent_id=lan&mapping_id=1&apply=false",
+							"host": [
+								"{{api_base}}"
+							],
+							"path": [
+								"dhcp",
+								"static_mapping"
+							],
+							"query": [
+								{
+									"key": "parent_id",
+									"value": "lan"
+								},
+								{
+									"key": "mapping_id",
+									"value": "1"
+								},
+								{
+									"key": "apply",
+									"value": "false"
+								}
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": null,
+					"header": [
+						{
+							"key": "date",
+							"value": "Tue, 02 Sep 2025 22:28:44 GMT"
+						},
+						{
+							"key": "server",
+							"value": "uvicorn"
+						},
+						{
+							"key": "content-length",
+							"value": "591"
+						},
+						{
+							"key": "content-type",
+							"value": "application/json"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"success\": true,\n    \"message\": \"Mapeamento estático DHCP (ID: 1) atualizado com sucesso no pfSense e banco de dados local\",\n    \"parent_id\": \"lan\",\n    \"mapping_id\": 1,\n    \"applied\": false,\n    \"local_updated\": true,\n    \"data\": {\n        \"code\": 200,\n        \"status\": \"ok\",\n        \"response_id\": \"SUCCESS\",\n        \"message\": \"\",\n        \"data\": {\n            \"parent_id\": \"lan\",\n            \"id\": 1,\n            \"mac\": \"d8:e0:e1:02:c1:a6\",\n            \"ipaddr\": \"10.30.30.7\",\n            \"cid\": \"WEBCAM\",\n            \"hostname\": \"WEBCAM\",\n            \"domain\": \"\",\n            \"domainsearchlist\": [],\n            \"defaultleasetime\": 7200,\n            \"maxleasetime\": 86400,\n            \"gateway\": \"\",\n            \"dnsserver\": [],\n            \"winsserver\": [],\n            \"ntpserver\": [],\n            \"arp_table_static_entry\": false,\n            \"descr\": \"Teste de atualização via IoT_API\"\n        }\n    }\n}"
+				}
+			]
+		}
+	],
+	"variable": [
+		{
+			"key": "api_base",
+			"value": "http://127.0.0.1:8000/api/devices",
+			"type": "string"
+		}
+	]
+}
