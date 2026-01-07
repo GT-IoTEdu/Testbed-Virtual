@@ -1,0 +1,40 @@
+angelo@angelo-System-Product-Name:~$ ^C
+angelo@angelo-System-Product-Name:~$ docker exec -it f6938e0ea91f getent hosts host.docker.internal
+172.17.0.1      host.docker.internal
+angelo@angelo-System-Product-Name:~$ docker exec -it f6938e0ea91f bash -c "
+timeout 5 bash -c '</dev/tcp/172.17.0.1/8090' && echo 'SUCCESS: Port 8090 is open on host.docker.internal' || echo 'ERROR: Cannot connect to port 8090'
+"
+ERROR: Cannot connect to port 8090
+angelo@angelo-System-Product-Name:~$ sudo ufw status
+[sudo] password for angelo: 
+Status: active
+
+To                         Action      From
+--                         ------      ----
+8001                       ALLOW       Anywhere                  
+8080                       ALLOW       Anywhere                  
+8001 (v6)                  ALLOW       Anywhere (v6)             
+8080 (v6)                  ALLOW       Anywhere (v6)             
+
+angelo@angelo-System-Product-Name:~$ sudo ufw allow from 172.17.0.0/16
+Rule added
+angelo@angelo-System-Product-Name:~$ sudo ufw status
+Status: active
+
+To                         Action      From
+--                         ------      ----
+8001                       ALLOW       Anywhere                  
+8080                       ALLOW       Anywhere                  
+Anywhere                   ALLOW       172.17.0.0/16             
+8001 (v6)                  ALLOW       Anywhere (v6)             
+8080 (v6)                  ALLOW       Anywhere (v6)             
+
+angelo@angelo-System-Product-Name:~$ sudo ufw allow from 172.20.0.0/16
+Rule added
+angelo@angelo-System-Product-Name:~$ docker exec -it f6938e0ea91f bash -c "
+timeout 5 bash -c '</dev/tcp/172.17.0.1/8090' && echo 'SUCCESS: Port 8090 is open on host.docker.internal' || echo 'ERROR: Cannot connect to port 8090'
+"
+SUCCESS: Port 8090 is open on host.docker.internal
+angelo@angelo-System-Product-Name:~$ 
+
+

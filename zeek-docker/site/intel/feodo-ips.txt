@@ -1,0 +1,4 @@
+#fields	indicator	indicator_type	meta.source	meta.desc
+137.184.9.29	Intel::ADDR	Feodo	IP malicioso
+162.243.103.246	Intel::ADDR	Feodo	IP malicioso
+79.194.143.100	Intel::ADDR	Feodo	IP malicioso

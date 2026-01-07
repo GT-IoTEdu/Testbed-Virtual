@@ -1,0 +1,243 @@
+# ICMP Tunnel Detector para SIMIR
+# Detecta uso de ICMP para exfiltração de dados e tunneling
+# Compatível com Zeek 7.2.2+
+
+@load base/frameworks/notice
+@load base/protocols/conn
+@load ./simir-notice-standards.zeek
+
+module ICMPTunnel;
+
+export {
+    redef enum Notice::Type += {
+        ICMP_Tunnel_Detected,
+        ICMP_Large_Payload,
+        ICMP_High_Volume,
+        ICMP_Suspicious_Pattern
+    };
+    
+    # Configurações
+    global max_normal_payload: count = 64 &redef;  # Payload normal do ping
+    global large_payload_threshold: count = 128 &redef;
+    global high_volume_threshold: count = 100 &redef;  # Pacotes ICMP em time_window
+    global time_window: interval = 5min &redef;
+    
+    # Tracking de ICMP por host
+    type ICMPStats: record {
+        packets: count &default=0;
+        large_payloads: count &default=0;
+        total_bytes: count &default=0;
+        first_seen: time;
+        last_seen: time;
+        destinations: set[addr] &optional;
+    };
+    
+    global icmp_stats: table[addr] of ICMPStats &create_expire=time_window;
+}
+
+# Detecta ICMP suspeito
+event icmp_echo_request(c: connection, icmp: icmp_conn, id: count, seq: count, payload: string)
+{
+    if (!c?$id)
+        return;
+    
+    local orig = c$id$orig_h;
+    local resp = c$id$resp_h;
+    local payload_len = |payload|;
+    
+    # Inicializa stats
+    if (orig !in icmp_stats) {
+        icmp_stats[orig] = [$first_seen=network_time(), $last_seen=network_time()];
+        icmp_stats[orig]$destinations = set();
+    }
+    
+    local stats = icmp_stats[orig];
+    ++stats$packets;
+    stats$total_bytes += payload_len;
+    stats$last_seen = network_time();
+    add stats$destinations[resp];
+    
+    # Detecta payload anormalmente grande
+    if (payload_len > large_payload_threshold) {
+        ++stats$large_payloads;
+        
+        NOTICE([$note=ICMP_Large_Payload,
+                $msg=fmt("[ICMP-TUNNEL] [HIGH] Large ICMP Payload: %s sent ICMP with %d bytes payload to %s (normal: %d bytes)", 
+                        SIMIR::format_ip(orig), payload_len, SIMIR::format_ip(resp), max_normal_payload),
+                $src=orig,
+                $dst=resp,
+                $proto=icmp,
+                $n=payload_len,
+                $sub=fmt("large_payload_%d_bytes", payload_len),
+                $identifier=fmt("icmp_large_%s_%s", orig, resp),
+                $suppress_for=10min]);
+    }
+    
+    # Detecta alto volume de ICMP
+    if (stats$packets >= high_volume_threshold) {
+        local duration = stats$last_seen - stats$first_seen;
+        local bytes_str = fmt("%.2f KB", stats$total_bytes / 1024.0);
+        
+        NOTICE([$note=ICMP_High_Volume,
+                $msg=fmt("[ICMP-TUNNEL] [MEDIUM] High ICMP Volume: %s sent %d ICMP packets (%s) to %d hosts in %s", 
+                        SIMIR::format_ip(orig), stats$packets, bytes_str, |stats$destinations|, duration),
+                $src=orig,
+                $proto=icmp,
+                $n=stats$packets,
+                $sub=fmt("high_volume_%d_packets", stats$packets),
+                $identifier=fmt("icmp_volume_%s", orig),
+                $suppress_for=15min]);
+    }
+    
+    # Detecta padrão de tunneling (múltiplos payloads grandes)
+    if (stats$large_payloads >= 5) {
+        local tunnel_duration = stats$last_seen - stats$first_seen;
+        
+        NOTICE([$note=ICMP_Tunnel_Detected,
+                $msg=fmt("[ICMP-TUNNEL] [CRITICAL] ICMP Tunneling Pattern: %s shows tunneling behavior (%d large payloads, %d total packets, %d destinations) in %s", 
+                        SIMIR::format_ip(orig), stats$large_payloads, stats$packets, |stats$destinations|, tunnel_duration),
+                $src=orig,
+                $proto=icmp,
+                $n=stats$large_payloads,
+                $sub=fmt("tunnel_%d_large_payloads", stats$large_payloads),
+                $identifier=fmt("icmp_tunnel_%s", orig),
+                $suppress_for=20min]);
+    }
+}
+
+# Detecta respostas ICMP suspeitas
+event icmp_echo_reply(c: connection, icmp: icmp_conn, id: count, seq: count, payload: string)
+{
+    if (!c?$id)
+        return;
+    
+    local orig = c$id$orig_h;
+    local resp = c$id$resp_h;
+    local payload_len = |payload|;
+    
+    # Verifica payload anormalmente grande em resposta
+    if (payload_len > large_payload_threshold) {
+        NOTICE([$note=ICMP_Suspicious_Pattern,
+                $msg=fmt("[ICMP-TUNNEL] [HIGH] Suspicious ICMP Reply: %s received ICMP reply with %d bytes payload from %s", 
+                        SIMIR::format_ip(orig), payload_len, SIMIR::format_ip(resp)),
+                $src=resp,
+                $dst=orig,
+                $proto=icmp,
+                $n=payload_len,
+                $sub="suspicious_reply",
+                $identifier=fmt("icmp_reply_%s_%s", resp, orig),
+                $suppress_for=10min]);
+    }
+}
+
+# Detecta ICMP unreachable excessivo (pode indicar scan ou ataque)
+event icmp_unreachable(c: connection, icmp: icmp_conn, code: count, context: icmp_context)
+{
+    if (!c?$id)
+        return;
+    
+    local orig = c$id$orig_h;
+    local resp = c$id$resp_h;
+    
+    # Inicializa stats para destino (quem está enviando unreachable)
+    if (resp !in icmp_stats) {
+        icmp_stats[resp] = [$first_seen=network_time(), $last_seen=network_time()];
+        icmp_stats[resp]$destinations = set();
+    }
+    
+    local stats = icmp_stats[resp];
+    ++stats$packets;
+    stats$last_seen = network_time();
+    add stats$destinations[orig];
+    
+    # Alerta se muitos unreachable
+    if (stats$packets >= 50) {
+        NOTICE([$note=ICMP_Suspicious_Pattern,
+                $msg=fmt("[ICMP-TUNNEL] [MEDIUM] Excessive ICMP Unreachable: %s sent %d ICMP unreachable messages to %d hosts", 
+                        SIMIR::format_ip(resp), stats$packets, |stats$destinations|),
+                $src=resp,
+                $proto=icmp,
+                $n=stats$packets,
+                $sub="excessive_unreachable",
+                $identifier=fmt("icmp_unreachable_%s", resp),
+                $suppress_for=15min]);
+    }
+}
+
+# Detector adicional baseado em conexões ICMP no conn.log
+# Funciona mesmo quando eventos icmp_echo_request não são gerados
+event connection_state_remove(c: connection)
+{
+    if (!c?$conn || !c$conn?$proto || c$conn$proto != icmp)
+        return;
+    
+    local orig = c$id$orig_h;
+    local resp = c$id$resp_h;
+    
+    # Ignora tráfego local
+    if (orig == resp)
+        return;
+    
+    # Pega estatísticas da conexão
+    local orig_bytes = c$conn?$orig_ip_bytes ? c$conn$orig_ip_bytes : 0;
+    local resp_bytes = c$conn?$resp_ip_bytes ? c$conn$resp_ip_bytes : 0;
+    local duration = c$conn?$duration ? c$conn$duration : 0.0;
+    
+    # Inicializa stats
+    if (orig !in icmp_stats) {
+        icmp_stats[orig] = [$first_seen=network_time(), $last_seen=network_time()];
+        icmp_stats[orig]$destinations = set();
+    }
+    
+    local stats = icmp_stats[orig];
+    ++stats$packets;
+    stats$total_bytes += orig_bytes;
+    stats$last_seen = network_time();
+    add stats$destinations[resp];
+    
+    # Detecta volume alto de ICMP baseado em bytes (não em número de conexões)
+    # Threshold: 1 MB de tráfego ICMP indica possível flood ou tunelamento
+    local traffic_threshold = 1000000;  # 1 MB
+    
+    if (orig_bytes > traffic_threshold) {
+        local duration_total = duration > 0.0 ? duration : 1.0;
+        local bytes_mb = orig_bytes / 1024.0 / 1024.0;
+        local rate_mbps = (orig_bytes * 8.0) / duration_total / 1024.0 / 1024.0;
+        
+        NOTICE([$note=ICMP_High_Volume,
+                $msg=fmt("[ICMP-TUNNEL] [HIGH] ICMP Flood Detected: %s sent %.2f MB of ICMP traffic to %s in %.1f seconds (%.2f Mbps)", 
+                        SIMIR::format_ip(orig), bytes_mb, SIMIR::format_ip(resp), duration_total, rate_mbps),
+                $src=orig,
+                $dst=resp,
+                $proto=icmp,
+                $n=orig_bytes,
+                $sub=fmt("flood_%.2f_MB", bytes_mb),
+                $identifier=fmt("icmp_flood_%s_%s", orig, resp),
+                $suppress_for=15min]);
+    }
+    
+    # Detecta payload anormalmente grande (possível tunneling)
+    # Threshold: 100 KB em uma única conexão ICMP
+    local large_traffic_threshold = 100000;  # 100 KB
+    
+    if (orig_bytes > large_traffic_threshold && orig_bytes < traffic_threshold) {
+        local bytes_kb = orig_bytes / 1024.0;
+        
+        NOTICE([$note=ICMP_Large_Payload,
+                $msg=fmt("[ICMP-TUNNEL] [MEDIUM] Large ICMP Traffic: %s sent %.2f KB of ICMP data to %s (suspicious for tunneling)", 
+                        SIMIR::format_ip(orig), bytes_kb, SIMIR::format_ip(resp)),
+                $src=orig,
+                $dst=resp,
+                $proto=icmp,
+                $n=orig_bytes,
+                $sub=fmt("large_traffic_%.2f_KB", bytes_kb),
+                $identifier=fmt("icmp_large_%s_%s", orig, resp),
+                $suppress_for=10min]);
+    }
+}
+
+event zeek_init()
+{
+    print fmt("ICMP Tunnel Detector ativo - Max normal payload: %d bytes, Large threshold: %d bytes, Volume threshold: %d packets, Window: %s",
+              max_normal_payload, large_payload_threshold, high_volume_threshold, time_window);
+}

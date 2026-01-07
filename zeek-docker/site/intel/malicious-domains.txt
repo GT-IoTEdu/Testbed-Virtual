@@ -1,0 +1,3 @@
+#fields	indicator	indicator_type	meta.source	meta.desc
+malware.example.com	Intel::DOMAIN	TEST	Domínio de teste malicioso
+evil.com	Intel::DOMAIN	MANUAL	Domínio malicioso exemplo
