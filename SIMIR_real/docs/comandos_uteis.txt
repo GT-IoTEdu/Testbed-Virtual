@@ -1,0 +1,50 @@
+- Comando para rodar o docker:
+docker compose up -d
+
+- Comando para parar o docker, fazer um novo build e iniciar o docker
+docker compose down --volumes --remove-orphans && docker compose build --no-cache && docker compose up -d
+
+- Comando para acessar o container:
+docker exec -it SIMIR_Z sh
+ou
+docker run -it --rm --entrypoint sh zeek-docker-zeek:latest
+
+- Deletar todas imagens docker:
+docker image prune -a
+
+- Parar container docker
+docker compose down --remove-orphans
+
+- Ver logs de conexão em tempo real:
+tail -f logs/current/conn.log
+
+- Checar scripts zeel:
+zeekctl check
+
+- Diagnostico zeek:
+zeekctl diag
+
+- Deploy zeek:
+zeekctl deploy
+
+- Ver a data e hora do timestamp do log:
+date -d @1754607975
+
+- Enviar email de teste:
+echo "Alerta de teste do Zeek" | mail -s "Teste Zeek" rafaelbartorres@gmail.com
+
+- Ver logs do containter zeek:
+docker logs SIMIR_Z
+
+- Testar Intelligence Framework:
+./scripts/test-intelligence.sh
+
+- Atualizar feeds de inteligência:
+./scripts/update-intel-feeds.sh
+
+- Ver logs de inteligência em tempo real:
+tail -f logs/current/intelligence.log
+tail -f logs/notice_PortScan_BruteForce.log | grep -i "intel\|malicious"
+
+- Verificar feeds de inteligência carregados:
+docker exec SIMIR_Z zeek -e "print Intel::read_files;"

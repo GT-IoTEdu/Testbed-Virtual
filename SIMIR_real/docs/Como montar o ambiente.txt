@@ -1,0 +1,35 @@
+-- Pré requisitos:
+-Uma maquina com duas interfaces (uma entra internet e a outra distribui na rede interna (será monitorada))
+-dhcp server configurado e distribuindo rede
+-Docker
+-Docker Compose
+
+-- Como montar o ambiente:
+- Acesse a pasta zeek-container/zeek-docker/ e edite o arquivo Dockerfile
+- Altere a linha ENV ZEEK_INTERFACE=enx000ec89f6cc0 e coloque após o '=' o nome da interface que deseja monitorar
+
+- Feito isso, edite o documento docker-compose.yml e também altere 
+a mesma variavel ZEEK_INTERFACE=
+
+Salve
+
+Agora para rodar o container basta dar os seguintes comandos estando dentro da pasta zeek-container/zeek-docker/
+
+docker-compose build
+docker-compose up -d
+
+Acesse o container com o comando docker exec -it SIMIR_Z sh
+
+Edite o arquivo:
+vi /usr/local/zeek/etc/node.cfg
+Altere a linha abaixo substituindo enx... pelo nome da sua interface que será monitorada (ifconfig)
+interface=enx000ec89f6cc0
+
+reconfigure o zeek
+zeekctl stop
+zeekctl deploy
+
+agora basta sair do containter digitando exit
+
+A pasta com os logs será a ~/zeek-container/zeek-docker/logs/
+

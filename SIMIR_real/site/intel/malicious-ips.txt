@@ -1,0 +1,2 @@
+#fields	indicator	indicator_type	meta.source	meta.desc
+10.20.30.40	Intel::ADDR	MANUAL	IP malicioso de exemplo

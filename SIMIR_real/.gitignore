@@ -1,0 +1,8 @@
+.rotated*
+backup
+.log
+logs/*
+*.bak
+
+# Exceto o notice.log
+!logs/notice.log

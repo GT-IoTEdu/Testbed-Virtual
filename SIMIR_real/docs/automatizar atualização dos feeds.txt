@@ -1,0 +1,8 @@
+# Configurar cron para atualizações automáticas
+crontab -e
+
+# A cada 6 horas - feeds completos (ajuste o caminho para sua instalação SIMIR)
+0 */6 * * * /caminho/para/SIMIR/scripts/update-threat-feeds.sh >/dev/null 2>&1
+
+# A cada 2 horas - apenas Abuse.ch (mais crítico)
+0 */2 * * * /caminho/para/SIMIR/scripts/import-abusech-feeds.sh >/dev/null 2>&1

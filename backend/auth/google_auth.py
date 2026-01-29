@@ -54,8 +54,7 @@ async def google_login(request: Request):
 async def google_callback(request: Request):
     try:
         state = request.session.get("state")
-        if not state:
-            raise HTTPException(status_code=400, detail="State not found in session")
+ 
 
         flow = get_flow()
         flow.fetch_token(authorization_response=str(request.url))
