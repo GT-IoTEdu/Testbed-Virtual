@@ -297,5 +297,26 @@ fi
 echo "[Zeek Entrypoint] Monitorando arquivo de log: $LOGFILE"
 echo "[Zeek Entrypoint] Sistema SIMIR ativo para detecção de port scan"
 echo "[Zeek Entrypoint] Use Ctrl+C para parar o monitoramento"
-
+while true; do
+    # Check for new logs every second (optional - can be intensive)
+    NEW_LOGS=$(find /usr/local/zeek/spool/zeek/ -name "*.log" -type f -size +0c 2>/dev/null | head -1)
+    if [ -n "$NEW_LOGS" ] && [ "$NEW_LOGS" != "$LAST_LOG" ]; then
+        echo "[Zeek Entrypoint] [LOG DETECTADO] $(date '+%H:%M:%S'): $NEW_LOGS"
+        LAST_LOG="$NEW_LOGS"
+    fi
+    
+    # Show status every 60 seconds to avoid spam
+    COUNTER=$((COUNTER + 1))
+    if [ $((COUNTER % 60)) -eq 0 ]; then
+        echo "[Zeek Entrypoint] [STATUS] $(date): Zeek monitorando ativamente a rede..."
+        # Quick status check without full output
+        if zeekctl status 2>&1 | grep -q "running"; then
+            echo "[Zeek Entrypoint] [STATUS] Zeek processos: OK"
+        else
+            echo "[Zeek Entrypoint] [STATUS] Zeek processos: PROBLEMA"
+        fi
+    fi
+    
+    sleep 1
+done
  

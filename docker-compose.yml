@@ -59,17 +59,10 @@ services:
     cap_add:
       - NET_RAW
       - NET_ADMIN
- 
-
- 
-    ports:
-      - "47760:47760"  
-      - "80:80"
-      - "8090:8090"      
     restart: unless-stopped
 
- 
- 
+
+
   ataque:
       build: ./Docker_ataque
       env_file: backend/.env

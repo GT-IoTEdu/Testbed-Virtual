@@ -37,6 +37,7 @@ print("=" * 50)
 from main import app
 
 if __name__ == "__main__":
+    print(ip_b)
     uvicorn.run(
         "main:app",
         host=ip_b,

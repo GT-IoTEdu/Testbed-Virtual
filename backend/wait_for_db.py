@@ -11,7 +11,7 @@ def wait_for_db():
         try:
             print(f"Attempting to connect to database... (Attempt {i+1}/{max_retries})")
             connection = mysql.connector.connect(
-                    host=os.getenv('MYSQL_HOST', 'db'),
+                    host=os.getenv('MYSQL_HOST', 'mysql-iot-edu'),
                     database=os.getenv('MYSQL_DB', 'iot_edu'),
                     user=os.getenv('MYSQL_USER', 'IoT_EDU'),
                     password=os.getenv('MYSQL_PASSWORD', 'root'),
