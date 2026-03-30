@@ -56,7 +56,7 @@ def create_test_users():
                 email="gestor.teste@unipampa.edu.br",
                 nome="Gestor Teste",
                 instituicao="UNIPAMPA",
-                permission=UserPermission.MANAGER
+                permission=UserPermission.ADMIN
             )
             session.add(manager)
             print("\n✅ Gestor criado:")

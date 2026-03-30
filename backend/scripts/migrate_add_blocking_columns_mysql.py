@@ -11,11 +11,11 @@ def get_db_connection():
     """Cria conexão com o banco MySQL"""
     try:
         connection = mysql.connector.connect(
-            host=os.getenv('MYSQL_HOST', 'localhost'),
-            database=os.getenv('MYSQL_DB', 'iot_edu'),
-            user=os.getenv('MYSQL_USER', 'IoT_EDU'),
-            password=os.getenv('MYSQL_PASSWORD', ''),
-            port=int(os.getenv('DB_PORT', 3306))  # Keep DB_PORT or change to MYSQL_PORT
+            host=os.getenv('DB_HOST', 'localhost'),
+            database=os.getenv('DB_NAME', 'iot_edu'),
+            user=os.getenv('DB_USER', 'root'),
+            password=os.getenv('DB_PASSWORD', ''),
+            port=int(os.getenv('DB_PORT', 3306))
         )
         return connection
     except mysql.connector.Error as e:

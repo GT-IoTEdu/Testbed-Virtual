@@ -8,6 +8,9 @@ echo "Waiting for database to be ready..."
 echo "Initializing database..."
 /opt/venv/bin/python /backend/db/create_tables.py
 /opt/venv/bin/python /backend/check_tables.py
+
+/opt/venv/bin/python /backend/scripts/create_institutions_simple.py
+
 /opt/venv/bin/python /backend/scripts/migrate_add_permission.py || true
 /opt/venv/bin/python /backend/scripts/create_test_users.py || true
 

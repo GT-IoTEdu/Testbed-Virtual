@@ -1,36 +1,19 @@
-# Services Scanners - Integração Zeek
+# Services Scanners - Integração Zeek, Suricata e Snort
 
-Este módulo implementa a integração com o Zeek Network Security Monitor para análise de logs de rede e detecção de incidentes de segurança.
+Este módulo implementa a integração com **Zeek**, **Suricata** e **Snort** no mesmo estilo: configuração por instituição, health check, listagem de alertas no banco e stream SSE em tempo real com persistência e bloqueio automático para severidade alta.
 
-## Arquivos
-
-### `zeek_models.py`
-Define os modelos de dados Pydantic para:
-- **ZeekLogType**: Enum com tipos de logs disponíveis (HTTP, DNS, CONN, SSL, etc.)
-- **ZeekSeverity**: Níveis de severidade (LOW, MEDIUM, HIGH, CRITICAL)
-- **ZeekIncidentStatus**: Status de incidentes (NEW, INVESTIGATING, RESOLVED, FALSE_POSITIVE)
-- **ZeekHttpLog**, **ZeekDnsLog**, **ZeekConnLog**: Modelos específicos para cada tipo de log
-- **ZeekIncident**: Modelo para incidentes detectados
-- **ZeekLogRequest/Response**: Modelos para requisições e respostas da API
+## Zeek (estilo Suricata/Snort)
 
 ### `zeek_service.py`
-Implementa a classe `ZeekService` que:
-- Conecta com a API do Zeek em `192.168.100.1/zeek-api/alert_data.php`
-- Faz parse dos logs no formato TSV do Zeek
-- Analisa logs para detectar incidentes de segurança automaticamente
-- Filtra logs por IP, tempo e outros critérios
-- Implementa detecção de padrões suspeitos:
-  - **HTTP**: Códigos de erro, user agents suspeitos, URIs maliciosas
-  - **DNS**: Domínios maliciosos, padrões DGA
-  - **Conexões**: Alto volume de tráfego, conexões falhadas
+- **ZeekService**: Configuração via `zeek_base_url` e `zeek_key` da instituição (ou parâmetros diretos).
+- **get_sse_url()**: Retorna a URL do endpoint SSE do Zeek (`/sse/alerts?api_key=...`).
+- **test_connection()**: Testa conectividade (retorna dict com `success`, `message`, `configured`).
+- **_normalize_alert()** / **_determine_severity()**: Normalizam alertas para o formato padrão (src_ip, dest_ip, signature, severity, etc.).
 
-### `zeek_router.py`
-Define os endpoints FastAPI:
-- `GET /zeek/health` - Verifica conectividade com API do Zeek
-- `GET /zeek/logs` - Busca logs brutos do Zeek
-- `GET /zeek/incidents` - Lista incidentes detectados com filtros
-- `GET /zeek/log-types` - Lista tipos de logs disponíveis
-- `GET /zeek/stats` - Estatísticas dos logs e incidentes
+### `zeek_router.py` (prefix `/scanners/zeek`)
+- `GET /alerts` - Lista alertas do Zeek salvos no banco (paginado; `user_id` ou `institution_id`).
+- `GET /health` - Verifica saúde da integração (aceita `user_id` ou `institution_id`).
+- `GET /sse/alerts` - Stream SSE de alertas em tempo real; persiste em `zeek_alerts` e dispara bloqueio automático para severidade alta.
 
 ## Configuração
 

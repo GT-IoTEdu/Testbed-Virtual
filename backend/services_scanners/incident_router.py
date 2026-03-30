@@ -2,14 +2,17 @@
 Roteador FastAPI para endpoints de incidentes de segurança.
 """
 import logging
+import asyncio
+import json
 from typing import List, Optional
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends, Query
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .incident_service import IncidentService
-from db.models import ZeekIncident
+from .incident_events import get_event_manager
+from db.models import Incident
 from db.enums import IncidentSeverity, IncidentStatus, ZeekLogType
 from services_firewalls.alias_service import AliasService
 from services_firewalls.blocking_feedback_service import BlockingFeedbackService
@@ -64,29 +67,88 @@ class AutoBlockRequest(BaseModel):
     reason: Optional[str] = "Bloqueio automático por incidente de segurança"
     admin_name: Optional[str] = "Sistema Automático"
 
-@router.get("/", response_model=List[IncidentResponse], summary="Lista incidentes")
+@router.get("/stream", summary="Stream de eventos de novos incidentes (SSE)")
+async def stream_incidents(token: Optional[str] = Query(None, description="Token JWT para autenticação (opcional)")):
+    """
+    Endpoint Server-Sent Events (SSE) para notificações em tempo real de novos incidentes.
+    
+    O cliente recebe eventos apenas quando novos incidentes são detectados e salvos no banco.
+    Não há polling - a conexão permanece aberta e eventos são enviados apenas quando necessário.
+    
+    Nota: EventSource não suporta headers customizados, então o token é passado via query parameter.
+    
+    Uso no frontend:
+    ```javascript
+    const token = localStorage.getItem('token');
+    const eventSource = new EventSource(`/api/incidents/stream?token=${token}`);
+    eventSource.onmessage = (event) => {
+      const incident = JSON.parse(event.data);
+      // Atualizar view com novo incidente
+    };
+    ```
+    """
+    async def event_generator():
+        """Gera eventos SSE para clientes conectados"""
+        event_manager = get_event_manager()
+        client_id, queue = event_manager.create_client_queue()
+        
+        try:
+            # Enviar evento de conexão
+            yield f"data: {json.dumps({'type': 'connected', 'message': 'Conectado ao stream de incidentes'})}\n\n"
+            
+            # Manter conexão aberta e enviar eventos quando chegarem
+            while True:
+                try:
+                    # Aguardar evento com timeout para verificar se conexão ainda está ativa
+                    event_data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    
+                    # Formatar como SSE
+                    sse_data = json.dumps(event_data)
+                    yield f"data: {sse_data}\n\n"
+                    
+                except asyncio.TimeoutError:
+                    # Enviar heartbeat para manter conexão ativa
+                    yield f": heartbeat\n\n"
+                    continue
+                except Exception as e:
+                    logger.error(f"Erro no stream SSE: {e}")
+                    break
+                    
+        except asyncio.CancelledError:
+            logger.debug(f"Cliente SSE desconectado: {client_id}")
+        except Exception as e:
+            logger.error(f"Erro no stream SSE: {e}", exc_info=True)
+        finally:
+            event_manager.remove_client_queue(client_id)
+            logger.debug(f"Stream SSE finalizado para cliente: {client_id}")
+    
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"  # Desabilita buffering no nginx
+        }
+    )
+
+
+@router.get("/", summary="Lista incidentes (paginado)")
 async def get_incidents(
     device_ip: Optional[str] = Query(None, description="Filtrar por IP do dispositivo"),
     severity: Optional[str] = Query(None, description="Filtrar por severidade"),
     status: Optional[str] = Query(None, description="Filtrar por status"),
     log_type: Optional[str] = Query(None, description="Filtrar por tipo de log"),
-    hours_ago: Optional[int] = Query(24, ge=1, le=168, description="Buscar incidentes das últimas N horas"),
-    limit: int = Query(100, ge=1, le=1000, description="Limite de resultados"),
+    hours_ago: Optional[int] = Query(168, ge=1, le=720, description="Buscar incidentes das últimas N horas"),
+    limit: int = Query(10, ge=1, le=100, description="Itens por página"),
     offset: int = Query(0, ge=0, description="Offset para paginação")
 ):
     """
-    Lista incidentes de segurança com filtros opcionais.
-    
-    - **device_ip**: Filtrar por IP específico do dispositivo
-    - **severity**: Filtrar por nível de severidade (low, medium, high, critical)
-    - **status**: Filtrar por status (new, investigating, resolved, false_positive, escalated)
-    - **log_type**: Filtrar por tipo de log do Zeek
-    - **hours_ago**: Buscar incidentes das últimas N horas
-    - **limit**: Número máximo de resultados (1-1000)
-    - **offset**: Número de resultados para pular (paginação)
+    Lista incidentes de segurança (tabela incidents) com filtros e paginação.
+    Retorna { "items": [...], "total": N } (mais recentes primeiro).
     """
     try:
-        incidents = incident_service.get_incidents(
+        incidents, total = incident_service.get_incidents(
             device_ip=device_ip,
             severity=severity,
             status=status,
@@ -95,9 +157,7 @@ async def get_incidents(
             limit=limit,
             offset=offset
         )
-        
-        return [incident.to_dict() for incident in incidents]
-        
+        return {"items": [incident.to_dict() for incident in incidents], "total": total}
     except Exception as e:
         logger.error(f"Erro ao listar incidentes: {e}")
         raise HTTPException(
@@ -279,6 +339,151 @@ async def get_incident_stats(
             detail=f"Erro interno ao gerar estatísticas: {str(e)}"
         )
 
+@router.post("/process-batch", summary="Processar incidentes em lote para bloqueio automático")
+async def process_incidents_batch(
+    limit: int = Query(50, ge=1, le=200, description="Número máximo de incidentes a processar")
+):
+    """
+    Processa incidentes não processados em lote para bloqueio automático.
+    
+    Este endpoint:
+    1. Busca incidentes não processados (processed_at IS NULL)
+    2. Para cada incidente de "Atacante", aplica bloqueio automático
+    3. Marca os incidentes como processados
+    4. Retorna estatísticas do processamento
+    
+    IMPORTANTE: Este endpoint resolve o problema de incidentes simultâneos,
+    pois processa todos os incidentes pendentes de uma vez.
+    """
+    try:
+        endpoint_start = datetime.now()
+        logger.info(f"Iniciando processamento em lote de incidentes (limite: {limit})")
+        
+        # Log de performance - chamada do endpoint
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_event(
+                event_type="ENDPOINT_CALL",
+                description=f"POST /api/incidents/process-batch - limit={limit}",
+                endpoint="POST /api/incidents/process-batch"
+            )
+        except Exception as e:
+            logger.warning(f"Erro ao registrar log de performance: {e}")
+        
+        result = incident_service.process_incidents_for_auto_blocking(limit)
+        
+        endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
+        
+        # Log de performance - fim do endpoint
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_endpoint_call(
+                endpoint="/api/incidents/process-batch",
+                method="POST",
+                duration_seconds=endpoint_duration,
+                success=result.get('success', False),
+                metadata={
+                    'limit': limit,
+                    'processed_count': result.get('processed_count', 0),
+                    'blocked_count': result.get('blocked_count', 0)
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Erro ao registrar log de performance: {e}")
+        
+        if result['success']:
+            return {
+                "success": True,
+                "message": result['message'],
+                "statistics": {
+                    "processed_count": result['processed_count'],
+                    "blocked_count": result['blocked_count'],
+                    "skipped_count": result['skipped_count'],
+                    "error_count": result['error_count']
+                },
+                "processed_incidents": result.get('processed_incidents', [])
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Erro no processamento em lote: {result.get('error', 'Erro desconhecido')}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro no endpoint de processamento em lote: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno no processamento em lote: {str(e)}"
+        )
+
+@router.get("/processing-stats", summary="Estatísticas de processamento de incidentes")
+async def get_processing_stats(
+    hours_ago: int = Query(24, ge=1, le=168, description="Período para estatísticas em horas")
+):
+    """
+    Retorna estatísticas do processamento de incidentes para bloqueio automático.
+    
+    Mostra:
+    - Total de incidentes
+    - Quantos foram processados
+    - Quantos estão pendentes
+    - Taxa de processamento
+    - Incidentes de atacante processados vs pendentes
+    """
+    try:
+        stats = incident_service.get_processing_stats(hours_ago)
+        
+        if not stats:
+            raise HTTPException(
+                status_code=500,
+                detail="Erro ao gerar estatísticas de processamento"
+            )
+        
+        return {
+            "success": True,
+            "statistics": stats,
+            "message": f"Estatísticas de processamento das últimas {hours_ago} horas"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao gerar estatísticas de processamento: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao gerar estatísticas: {str(e)}"
+        )
+
+@router.get("/unprocessed", summary="Listar incidentes não processados")
+async def get_unprocessed_incidents(
+    limit: int = Query(100, ge=1, le=500, description="Número máximo de incidentes a retornar")
+):
+    """
+    Lista incidentes que ainda não foram processados para bloqueio automático.
+    
+    Útil para verificar quantos incidentes estão pendentes de processamento.
+    """
+    try:
+        incidents = incident_service.get_unprocessed_incidents(limit)
+        
+        return {
+            "success": True,
+            "count": len(incidents),
+            "incidents": [incident.to_dict() for incident in incidents],
+            "message": f"Encontrados {len(incidents)} incidentes não processados"
+        }
+        
+    except Exception as e:
+        logger.error(f"Erro ao buscar incidentes não processados: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao buscar incidentes não processados: {str(e)}"
+        )
+
 @router.post("/auto-block", summary="Bloqueio automático por incidente")
 async def auto_block_device(request: AutoBlockRequest):
     """
@@ -303,6 +508,21 @@ async def auto_block_device(request: AutoBlockRequest):
     6. Cria feedback administrativo
     """
     try:
+        endpoint_start = datetime.now()
+        
+        # Log de performance - chamada do endpoint
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_event(
+                event_type="ENDPOINT_CALL",
+                description=f"POST /api/incidents/auto-block - incident_id={request.incident_id}",
+                endpoint="POST /api/incidents/auto-block",
+                incident_id=request.incident_id
+            )
+        except Exception as e:
+            logger.warning(f"Erro ao registrar log de performance: {e}")
+        
         # Buscar o incidente
         incident = incident_service.get_incident_by_id(request.incident_id)
         if not incident:
@@ -315,8 +535,8 @@ async def auto_block_device(request: AutoBlockRequest):
         incident_type = incident.incident_type
         logger.info(f"Iniciando bloqueio automático para IP {device_ip} baseado no incidente {request.incident_id} (Tipo: {incident_type})")
         
-        # Verificar se o incidente é de um atacante (contém "Atacante")
-        is_attacker = "Atacante" in incident_type
+        # Verificar se o incidente é de um atacante (contém "Atacante" ou "Attacker")
+        is_attacker = "Atacante" in incident_type or "Attacker" in incident_type
         
         if not is_attacker:
             logger.info(f"Incidente {request.incident_id} não é de um atacante (Tipo: {incident_type}). Bloqueio automático não aplicado.")
@@ -332,141 +552,121 @@ async def auto_block_device(request: AutoBlockRequest):
         
         logger.info(f"Dispositivo {device_ip} identificado como atacante. Aplicando bloqueio automático.")
         
-        # Verificar se o IP já está bloqueado
-        with AliasService() as alias_service:
-            # Verificar se está no alias "Bloqueados"
-            blocked_alias = alias_service.get_alias_by_name("Bloqueados")
-            if blocked_alias:
-                blocked_addresses = [addr['address'] for addr in blocked_alias['addresses']]
-                if device_ip in blocked_addresses:
-                    logger.warning(f"IP {device_ip} já está bloqueado")
-                    return {
-                        "success": True,
-                        "message": f"IP {device_ip} já estava bloqueado",
-                        "device_ip": device_ip,
-                        "incident_id": request.incident_id,
-                        "already_blocked": True
-                    }
-            
-            # Remover do alias "Autorizados" se existir
-            authorized_alias = alias_service.get_alias_by_name("Autorizados")
-            if authorized_alias:
-                authorized_addresses = [addr['address'] for addr in authorized_alias['addresses']]
-                if device_ip in authorized_addresses:
-                    logger.info(f"Removendo IP {device_ip} do alias Autorizados")
-                    
-                    # Criar nova lista sem o IP
-                    new_addresses = []
-                    new_details = []
-                    for addr in authorized_alias['addresses']:
-                        if addr['address'] != device_ip:
-                            new_addresses.append(addr)
-                            new_details.append(addr.get('detail', ''))
-                    
-                    # Atualizar alias Autorizados
-                    alias_service.update_alias("Autorizados", {
-                        'addresses': new_addresses
-                    })
-                    logger.info(f"IP {device_ip} removido do alias Autorizados")
-            
-            # Adicionar ao alias "Bloqueados"
-            logger.info(f"Adicionando IP {device_ip} ao alias Bloqueados")
-            
-            # Verificar se alias Bloqueados existe
-            if not blocked_alias:
-                # Criar alias Bloqueados se não existir
-                logger.info("Criando alias Bloqueados no pfSense e banco de dados")
-                create_result = alias_service.create_alias({
-                    'name': 'Bloqueados',
-                    'alias_type': 'host',
-                    'descr': 'Dispositivos bloqueados por incidentes de segurança',
-                    'addresses': [{'address': device_ip, 'detail': f'Bloqueado automaticamente - Incidente {request.incident_id}'}]
-                })
-                
-                if create_result.get('success'):
-                    logger.info("Alias Bloqueados criado com sucesso")
-                else:
-                    logger.error(f"Erro ao criar alias Bloqueados: {create_result}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Erro ao criar alias Bloqueados no pfSense"
-                    )
-            else:
-                # Adicionar IP ao alias existente
-                logger.info(f"Adicionando IP {device_ip} ao alias Bloqueados existente")
-                add_result = alias_service.add_addresses_to_alias("Bloqueados", [{
-                    'address': device_ip, 
-                    'detail': f'Bloqueado automaticamente - Incidente {request.incident_id}'
-                }])
-                
-                if add_result.get('success'):
-                    logger.info(f"IP {device_ip} adicionado ao alias Bloqueados com sucesso")
-                else:
-                    logger.error(f"Erro ao adicionar IP ao alias Bloqueados: {add_result}")
-                    raise HTTPException(
-                        status_code=500,
-                        detail="Erro ao adicionar IP ao alias Bloqueados no pfSense"
-                    )
+        # Usar o método do serviço para aplicar bloqueio (que já tem logging de performance)
+        blocking_result = incident_service._apply_auto_block(incident)
         
-        # Atualizar status do incidente
-        incident_service.update_incident_status(
-            request.incident_id, 
-            "resolved", 
-            f"Dispositivo bloqueado automaticamente. Motivo: {request.reason}"
-        )
+        endpoint_duration = (datetime.now() - endpoint_start).total_seconds()
         
-        # Criar feedback administrativo
+        # Log de performance - fim do endpoint
         try:
-            feedback_service = BlockingFeedbackService()
-            
-            # Buscar dispositivo no banco DHCP para obter o ID
-            from db.models import DhcpStaticMapping
-            from db.session import SessionLocal
-            
-            db = SessionLocal()
-            try:
-                device = db.query(DhcpStaticMapping).filter(
-                    DhcpStaticMapping.ipaddr == device_ip
-                ).first()
-                
-                if device:
-                    feedback = feedback_service.create_admin_blocking_feedback(
-                        dhcp_mapping_id=device.id,
-                        admin_reason=f"{request.reason} - Incidente {request.incident_id}: {incident.incident_type}",
-                        admin_name=request.admin_name,
-                        problem_resolved=None
-                    )
-                    
-                    if feedback:
-                        logger.info(f"Feedback administrativo criado com ID: {feedback.id}")
-                    else:
-                        logger.warning(f"Falha ao criar feedback administrativo para dispositivo {device_ip}")
-                else:
-                    logger.warning(f"Dispositivo com IP {device_ip} não encontrado no banco DHCP")
-            finally:
-                db.close()
-                
-        except Exception as feedback_error:
-            logger.error(f"Erro ao criar feedback administrativo: {feedback_error}")
-            # Não falha o bloqueio se o feedback não for criado
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_endpoint_call(
+                endpoint="/api/incidents/auto-block",
+                method="POST",
+                duration_seconds=endpoint_duration,
+                success=blocking_result,
+                metadata={
+                    'incident_id': request.incident_id,
+                    'device_ip': device_ip,
+                    'incident_type': incident_type
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Erro ao registrar log de performance: {e}")
         
-        logger.info(f"Bloqueio automático concluído para IP {device_ip}")
-        
-        return {
-            "success": True,
-            "message": f"Dispositivo {device_ip} bloqueado automaticamente com sucesso",
-            "device_ip": device_ip,
-            "incident_id": request.incident_id,
-            "incident_type": incident.incident_type,
-            "reason": request.reason,
-            "already_blocked": False
-        }
+        if blocking_result:
+            return {
+                "success": True,
+                "message": f"Dispositivo {device_ip} bloqueado automaticamente com sucesso",
+                "device_ip": device_ip,
+                "incident_id": request.incident_id,
+                "incident_type": incident_type,
+                "blocked": True
+            }
+        else:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Falha ao aplicar bloqueio automático para IP {device_ip}"
+            )
         
     except HTTPException:
         raise
     except Exception as e:
+        endpoint_duration = (datetime.now() - endpoint_start).total_seconds() if 'endpoint_start' in locals() else 0
+        
+        # Log de performance - erro
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_endpoint_call(
+                endpoint="/api/incidents/auto-block",
+                method="POST",
+                duration_seconds=endpoint_duration,
+                success=False,
+                metadata={
+                    'incident_id': request.incident_id if 'request' in locals() else None,
+                    'error': str(e)
+                }
+            )
+        except:
+            pass
+        
         logger.error(f"Erro no bloqueio automático: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Erro interno no bloqueio automático: {str(e)}"
+        )
+
+@router.get("/{incident_id}/blocking-times", summary="Tempos de detecção e bloqueio de um incidente")
+async def get_incident_blocking_times(incident_id: int):
+    """
+    Obtém os tempos de detecção (TtD) e bloqueio (TtB) para um incidente específico.
+    
+    - **TtD (Time to Detection)**: Tempo desde a detecção até o processamento do incidente
+    - **TtB (Time to Block)**: Tempo desde a detecção até o bloqueio efetivo do dispositivo
+    
+    Retorna os tempos em segundos e formato legível (ex: "2h 15m 30s").
+    """
+    try:
+        result = incident_service.get_blocking_times(incident_id)
+        
+        if 'error' in result:
+            raise HTTPException(
+                status_code=404 if 'não encontrado' in result['error'] else 500,
+                detail=result['error']
+            )
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Erro ao obter tempos de bloqueio: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao calcular tempos de bloqueio: {str(e)}"
+        )
+
+@router.get("/blocking-times/all", summary="Tempos de detecção e bloqueio de todos os incidentes")
+async def get_all_blocking_times(
+    limit: int = Query(100, ge=1, le=500, description="Número máximo de incidentes a retornar")
+):
+    """
+    Obtém os tempos de detecção (TtD) e bloqueio (TtB) para todos os incidentes bloqueados.
+    
+    - **TtD (Time to Detection)**: Tempo desde a detecção até o processamento do incidente
+    - **TtB (Time to Block)**: Tempo desde a detecção até o bloqueio efetivo do dispositivo
+    
+    Retorna os tempos em segundos e formato legível (ex: "2h 15m 30s").
+    """
+    try:
+        results = incident_service.get_all_blocking_times(limit)
+        return results
+        
+    except Exception as e:
+        logger.error(f"Erro ao obter tempos de bloqueio: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao calcular tempos de bloqueio: {str(e)}"
         )

@@ -2,10 +2,79 @@ import requests
 import json
 import config
 import logging
+from datetime import datetime
+from typing import Optional
 
 logger = logging.getLogger("pfsense_client")
 
-def cadastrar_alias_pfsense(name, alias_type, descr, address, detail):
+def _get_pfsense_config(
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+) -> tuple[str, str]:
+    """
+    Obtém configurações do pfSense, buscando do banco se necessário.
+    
+    Prioridade:
+    1. Parâmetros fornecidos diretamente (pfsense_url, pfsense_key)
+    2. Configurações da instituição do usuário (se user_id fornecido)
+    3. Configurações da instituição (se institution_id fornecido)
+    4. Configurações globais do config (fallback)
+    
+    Args:
+        pfsense_url: URL base do pfSense (opcional)
+        pfsense_key: Chave API do pfSense (opcional)
+        user_id: ID do usuário para buscar configurações da instituição (opcional)
+        institution_id: ID da instituição para buscar configurações (opcional)
+        
+    Returns:
+        Tupla (url, key) com as configurações do pfSense
+    """
+    # Se já foram fornecidas diretamente, usar
+    if pfsense_url and pfsense_key:
+        return pfsense_url, pfsense_key
+    
+    # Tentar buscar do banco de dados
+    try:
+        from services_firewalls.institution_config_service import InstitutionConfigService
+        
+        institution_config = None
+        
+        if user_id:
+            institution_config = InstitutionConfigService.get_user_institution_config(user_id=user_id)
+        elif institution_id:
+            institution_config = InstitutionConfigService.get_institution_config(institution_id)
+        
+        if institution_config:
+            url = institution_config.get('pfsense_base_url')
+            key = institution_config.get('pfsense_key')
+            if url and key:
+                logger.debug(f"Usando configurações do pfSense da instituição {institution_config.get('nome')}")
+                return url, key
+    except Exception as e:
+        logger.warning(f"Erro ao buscar configurações da instituição, usando config global: {e}")
+    
+    # Fallback para config global
+    url = pfsense_url or config.PFSENSE_API_URL
+    key = pfsense_key or config.PFSENSE_API_KEY
+    
+    if not url or not key:
+        raise ValueError("Configurações do pfSense não encontradas. Configure pfsense_url e pfsense_key, ou configure no banco de dados (tabela institutions), ou use variáveis de ambiente.")
+    
+    return url, key
+
+def cadastrar_alias_pfsense(
+    name, 
+    alias_type, 
+    descr, 
+    address, 
+    detail, 
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Cadastra um novo alias no pfSense.
     
@@ -15,13 +84,18 @@ def cadastrar_alias_pfsense(name, alias_type, descr, address, detail):
         descr (str): Descrição do alias.
         address (list): Lista de endereços IP ou redes.
         detail (list): Lista de detalhes para cada endereço.
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense.
     """
-    url = f"{config.PFSENSE_API_URL}firewall/alias"
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}firewall/alias"
     headers = {
-        "X-API-Key": config.PFSENSE_API_KEY,
+        "X-API-Key": api_key,
         "Content-Type": "application/json"
     }
     data = {
@@ -42,19 +116,30 @@ def cadastrar_alias_pfsense(name, alias_type, descr, address, detail):
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def obter_alias_pfsense(name):
+def obter_alias_pfsense(
+    name, 
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Obtém um alias específico do pfSense.
     
     Parâmetros:
         name (str): Nome do alias.
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Dados do alias ou None se não encontrado.
     """
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
     # Usar o mesmo endpoint que funciona para listar todos os aliases
-    url = f"{config.PFSENSE_API_URL}firewall/aliases"
-    headers = {"X-API-Key": config.PFSENSE_API_KEY}
+    url = f"{base_url}firewall/aliases"
+    headers = {"X-API-Key": api_key}
     
     try:
         response = requests.get(url, headers=headers, timeout=10, verify=False)
@@ -78,15 +163,27 @@ def obter_alias_pfsense(name):
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def listar_aliases_pfsense():
+def listar_aliases_pfsense(
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Lista todos os aliases do pfSense.
+    
+    Parâmetros:
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense contendo todos os aliases.
     """
-    url = f"{config.PFSENSE_API_URL}firewall/aliases"
-    headers = {"X-API-Key": config.PFSENSE_API_KEY}
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}firewall/aliases"
+    headers = {"X-API-Key": api_key}
     
     try:
         response = requests.get(url, headers=headers, timeout=10, verify=False)
@@ -101,16 +198,28 @@ def listar_aliases_pfsense():
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def listar_clientes_dhcp_pfsense():
+def listar_clientes_dhcp_pfsense(
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Lista todos os servidores DHCP e seus clientes do pfSense.
+    
+    Parâmetros:
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense contendo informações dos servidores DHCP e clientes.
     """
-    url = f"{config.PFSENSE_API_URL}services/dhcp_servers"
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}services/dhcp_servers"
     headers = {
-        "X-API-Key": config.PFSENSE_API_KEY
+        "X-API-Key": api_key
     }
     
     try:
@@ -126,20 +235,32 @@ def listar_clientes_dhcp_pfsense():
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def listar_mapeamentos_staticos_dhcp_pfsense(parent_id, mapping_id):
+def listar_mapeamentos_staticos_dhcp_pfsense(
+    parent_id, 
+    mapping_id,
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Lista mapeamentos estáticos DHCP do pfSense.
     
     Parâmetros:
         parent_id (str): ID da interface (ex: "lan", "wan", "opt1")
         mapping_id (int): ID do mapeamento específico
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense contendo o mapeamento específico.
     """
-    url = f"{config.PFSENSE_API_URL}services/dhcp_server/static_mapping"
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}services/dhcp_server/static_mapping"
     headers = {
-        "X-API-Key": config.PFSENSE_API_KEY
+        "X-API-Key": api_key
     }
     
     # Usar query parameters em vez de body
@@ -158,15 +279,27 @@ def listar_mapeamentos_staticos_dhcp_pfsense(parent_id, mapping_id):
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def listar_regras_firewall_pfsense():
+def listar_regras_firewall_pfsense(
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Lista todas as regras de firewall do pfSense.
+    
+    Args:
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict|list: Resposta JSON da API do pfSense contendo as regras.
     """
-    url = f"{config.PFSENSE_API_URL}firewall/rules"
-    headers = {"X-API-Key": config.PFSENSE_API_KEY}
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}firewall/rules"
+    headers = {"X-API-Key": api_key}
     try:
         response = requests.get(url, headers=headers, timeout=10, verify=False)
         response.raise_for_status()
@@ -180,7 +313,15 @@ def listar_regras_firewall_pfsense():
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def verificar_mapeamento_existente_pfsense(parent_id, ipaddr=None, mac=None):
+def verificar_mapeamento_existente_pfsense(
+    parent_id, 
+    ipaddr=None, 
+    mac=None,
+    pfsense_url: Optional[str] = None,
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Verifica se já existe um mapeamento estático DHCP com o mesmo IP ou MAC.
     
@@ -188,12 +329,17 @@ def verificar_mapeamento_existente_pfsense(parent_id, ipaddr=None, mac=None):
         parent_id (str): ID do servidor DHCP pai
         ipaddr (str, opcional): Endereço IP para verificar
         mac (str, opcional): Endereço MAC para verificar
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido)
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido)
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição
+        institution_id (int, opcional): ID da instituição para buscar configurações
     
     Retorna:
         dict: Informações sobre mapeamentos existentes encontrados
     """
-    url = f"{config.PFSENSE_API_URL}services/dhcp_servers"
-    headers = {"X-API-Key": config.PFSENSE_API_KEY}
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}services/dhcp_servers"
+    headers = {"X-API-Key": api_key}
     
     try:
         response = requests.get(url, headers=headers, timeout=10, verify=False)
@@ -236,7 +382,14 @@ def verificar_mapeamento_existente_pfsense(parent_id, ipaddr=None, mac=None):
         logger.error(f"Erro ao verificar mapeamentos existentes: {e}")
         raise
 
-def cadastrar_mapeamento_statico_dhcp_pfsense(mapping_data, verificar_existente=True):
+def cadastrar_mapeamento_statico_dhcp_pfsense(
+    mapping_data, 
+    verificar_existente=True,
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Cadastra um novo mapeamento estático DHCP no pfSense.
     
@@ -260,10 +413,16 @@ def cadastrar_mapeamento_statico_dhcp_pfsense(mapping_data, verificar_existente=
             "descr": "string"
         }
         verificar_existente (bool): Se deve verificar mapeamentos existentes antes de cadastrar
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense.
     """
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    
     # Verificar mapeamentos existentes se solicitado
     if verificar_existente:
         parent_id = mapping_data.get("parent_id")
@@ -271,7 +430,15 @@ def cadastrar_mapeamento_statico_dhcp_pfsense(mapping_data, verificar_existente=
         mac = mapping_data.get("mac")
         
         if parent_id and (ipaddr or mac):
-            existing_check = verificar_mapeamento_existente_pfsense(parent_id, ipaddr, mac)
+            existing_check = verificar_mapeamento_existente_pfsense(
+                parent_id, 
+                ipaddr, 
+                mac, 
+                pfsense_url=base_url, 
+                pfsense_key=api_key,
+                user_id=user_id,
+                institution_id=institution_id
+            )
             
             if existing_check["exists"]:
                 # Retornar erro informando sobre mapeamentos existentes
@@ -285,9 +452,9 @@ def cadastrar_mapeamento_statico_dhcp_pfsense(mapping_data, verificar_existente=
                 
                 raise ValueError(error_msg)
     
-    url = f"{config.PFSENSE_API_URL}services/dhcp_server/static_mapping"
+    url = f"{base_url}services/dhcp_server/static_mapping"
     headers = {
-        "X-API-Key": config.PFSENSE_API_KEY,
+        "X-API-Key": api_key,
         "Content-Type": "application/json"
     }
     
@@ -304,7 +471,18 @@ def cadastrar_mapeamento_statico_dhcp_pfsense(mapping_data, verificar_existente=
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def atualizar_alias_pfsense(alias_id: int, name: str, alias_type=None, descr=None, address=None, detail=None):
+def atualizar_alias_pfsense(
+    alias_id: int, 
+    name: str, 
+    alias_type=None, 
+    descr=None, 
+    address=None, 
+    detail=None,
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Atualiza um alias existente no pfSense.
     
@@ -315,13 +493,27 @@ def atualizar_alias_pfsense(alias_id: int, name: str, alias_type=None, descr=Non
         descr (str, opcional): Nova descrição do alias.
         address (list, opcional): Nova lista de endereços IP ou redes.
         detail (list, opcional): Nova lista de detalhes para cada endereço.
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense.
     """
-    url = f"{config.PFSENSE_API_URL}firewall/alias"
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    
+    # Validação explícita para evitar URLs None
+    if not base_url or base_url == "None" or not api_key:
+        raise ValueError(
+            f"Configurações do pfSense inválidas ou não encontradas. "
+            f"base_url={base_url}, user_id={user_id}, institution_id={institution_id}. "
+            "Verifique se o usuário tem uma instituição associada e se a instituição possui configurações do pfSense no banco de dados."
+        )
+    
+    url = f"{base_url}firewall/alias"
     headers = {
-        "X-API-Key": config.PFSENSE_API_KEY,
+        "X-API-Key": api_key,
         "Content-Type": "application/json"
     }
     
@@ -341,10 +533,51 @@ def atualizar_alias_pfsense(alias_id: int, name: str, alias_type=None, descr=Non
         data["detail"] = detail
     
     try:
+        sync_start = datetime.now()
         response = requests.patch(url, json=data, headers=headers, timeout=10, verify=False)
         response.raise_for_status()
-        return response.json()
+        result = response.json()
+        sync_duration = (datetime.now() - sync_start).total_seconds()
+        
+        # Log de performance
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_sync(
+                sync_type="ALIAS_UPDATE",
+                duration_seconds=sync_duration,
+                success=True,
+                metadata={
+                    'alias_id': alias_id,
+                    'alias_name': name,
+                    'endpoint': 'pfsense_client.atualizar_alias_pfsense'
+                }
+            )
+        except Exception as perf_err:
+            logger.warning(f"Erro ao registrar log de performance: {perf_err}")
+        
+        return result
     except Exception as e:
+        sync_duration = (datetime.now() - sync_start).total_seconds() if 'sync_start' in locals() else 0
+        
+        # Log de performance - erro
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_sync(
+                sync_type="ALIAS_UPDATE",
+                duration_seconds=sync_duration,
+                success=False,
+                metadata={
+                    'alias_id': alias_id,
+                    'alias_name': name,
+                    'error': str(e),
+                    'endpoint': 'pfsense_client.atualizar_alias_pfsense'
+                }
+            )
+        except:
+            pass
+        
         logger.error(f"Erro ao atualizar alias '{name}' (ID: {alias_id}) no pfSense: {e}\nURL: {url}\nHeaders: {headers}\nPayload: {data}")
         if hasattr(e, 'response') and e.response is not None:
             logger.error(f"Resposta do pfSense: {e.response.text}")
@@ -456,7 +689,12 @@ def atualizar_mapeamento_statico_dhcp_pfsense(parent_id: str, mapping_id: int, u
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def aplicar_mudancas_firewall_pfsense():
+def aplicar_mudancas_firewall_pfsense(
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Aplica as mudanças pendentes no firewall do pfSense.
     
@@ -465,6 +703,12 @@ def aplicar_mudancas_firewall_pfsense():
     
     Utiliza a API oficial do pfSense v2:
     POST /api/v2/firewall/apply
+    
+    Parâmetros:
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense com informações sobre a aplicação das mudanças.
@@ -477,9 +721,10 @@ def aplicar_mudancas_firewall_pfsense():
         if resultado.get('code') == 200:
             print("Mudanças aplicadas com sucesso!")
     """
-    url = f"{config.PFSENSE_API_URL}firewall/apply"
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}firewall/apply"
     headers = {
-        "X-API-Key": config.PFSENSE_API_KEY,
+        "X-API-Key": api_key,
         "Content-Type": "application/json"
     }
     
@@ -491,15 +736,57 @@ def aplicar_mudancas_firewall_pfsense():
         logger.info(f"Mudanças aplicadas com sucesso no pfSense: {result}")
         return result
     except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+        sync_duration = (datetime.now() - sync_start).total_seconds() if 'sync_start' in locals() else 0
+        
+        # Log de performance - erro
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_sync(
+                sync_type="FIREWALL_APPLY",
+                duration_seconds=sync_duration,
+                success=False,
+                metadata={
+                    'error': str(e),
+                    'error_type': 'Timeout/Connection',
+                    'endpoint': 'pfsense_client.aplicar_mudancas_firewall_pfsense'
+                }
+            )
+        except:
+            pass
+        
         logger.error(f"Timeout/Conexão ao aplicar mudanças no firewall do pfSense: {e}")
         raise
     except Exception as e:
+        sync_duration = (datetime.now() - sync_start).total_seconds() if 'sync_start' in locals() else 0
+        
+        # Log de performance - erro
+        try:
+            from services_scanners.performance_logger import get_performance_logger
+            perf_logger = get_performance_logger()
+            perf_logger.log_sync(
+                sync_type="FIREWALL_APPLY",
+                duration_seconds=sync_duration,
+                success=False,
+                metadata={
+                    'error': str(e),
+                    'endpoint': 'pfsense_client.aplicar_mudancas_firewall_pfsense'
+                }
+            )
+        except:
+            pass
+        
         logger.error(f"Erro ao aplicar mudanças no firewall do pfSense: {e}\nURL: {url}\nHeaders: {headers}")
         if hasattr(e, 'response') and e.response is not None:
             logger.error(f"Resposta do pfSense: {e.response.text}")
         raise
 
-def aplicar_mudancas_dhcp_pfsense():
+def aplicar_mudancas_dhcp_pfsense(
+    pfsense_url: Optional[str] = None, 
+    pfsense_key: Optional[str] = None,
+    user_id: Optional[int] = None,
+    institution_id: Optional[int] = None
+):
     """
     Aplica as mudanças pendentes no servidor DHCP do pfSense.
     
@@ -508,6 +795,12 @@ def aplicar_mudancas_dhcp_pfsense():
     
     Utiliza a API oficial do pfSense v2:
     POST /api/v2/services/dhcp_server/apply
+    
+    Parâmetros:
+        pfsense_url (str, opcional): URL base do pfSense (usa config se não fornecido).
+        pfsense_key (str, opcional): Chave API do pfSense (usa config se não fornecido).
+        user_id (int, opcional): ID do usuário para buscar configurações da instituição.
+        institution_id (int, opcional): ID da instituição para buscar configurações.
     
     Retorna:
         dict: Resposta JSON da API do pfSense com informações sobre a aplicação das mudanças.
@@ -520,9 +813,10 @@ def aplicar_mudancas_dhcp_pfsense():
         if resultado.get('code') == 200:
             print("Mudanças DHCP aplicadas com sucesso!")
     """
-    url = f"{config.PFSENSE_API_URL}services/dhcp_server/apply"
+    base_url, api_key = _get_pfsense_config(pfsense_url, pfsense_key, user_id, institution_id)
+    url = f"{base_url}services/dhcp_server/apply"
     headers = {
-        "X-API-Key": config.PFSENSE_API_KEY,
+        "X-API-Key": api_key,
         "Content-Type": "application/json"
     }
     

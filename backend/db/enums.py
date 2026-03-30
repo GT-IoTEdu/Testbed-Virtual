@@ -5,8 +5,9 @@ from enum import Enum
 
 class UserPermission(str, Enum):
     """Tipos de permissão de usuário."""
-    USER = "USER"        # Usuário comum - pode gerenciar apenas seus dispositivos
-    MANAGER = "MANAGER"  # Gestor - pode gerenciar todos os dispositivos
+    USER = "USER"           # Usuário comum - pode gerenciar apenas seus dispositivos
+    ADMIN = "ADMIN"         # Administrador - pode gerenciar todos os dispositivos da instituição
+    SUPERUSER = "SUPERUSER" # Superusuário - pode gerenciar permissões de usuários e tudo no sistema
 
 class DeviceStatus(str, Enum):
     """Status de dispositivos."""

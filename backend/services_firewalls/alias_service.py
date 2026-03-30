@@ -15,14 +15,59 @@ logger = logging.getLogger(__name__)
 class AliasService:
     """Serviço para gerenciar aliases do pfSense."""
     
-    def __init__(self):
+    def __init__(self, institution_id: Optional[int] = None, user_id: Optional[int] = None):
+        """
+        Inicializa o serviço de aliases.
+        
+        Args:
+            institution_id: ID da instituição para buscar configurações (opcional)
+            user_id: ID do usuário para buscar configurações da instituição (opcional)
+        """
         self.db = SessionLocal()
+        self.institution_id = institution_id
+        self.user_id = user_id
+        self._institution_config = None
     
     def __enter__(self):
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.db.close()
+    
+    def _get_institution_config(self) -> Optional[Dict[str, Any]]:
+        """
+        Obtém configurações da instituição (cacheado).
+        
+        Returns:
+            Dicionário com configurações ou None
+        """
+        if self._institution_config is not None:
+            return self._institution_config
+        
+        try:
+            from services_firewalls.institution_config_service import InstitutionConfigService
+            
+            if self.user_id:
+                self._institution_config = InstitutionConfigService.get_user_institution_config(user_id=self.user_id)
+            elif self.institution_id:
+                self._institution_config = InstitutionConfigService.get_institution_config(self.institution_id)
+            
+            return self._institution_config
+        except Exception as e:
+            logger.warning(f"Erro ao buscar configurações da instituição: {e}")
+            return None
+    
+    def _get_pfsense_config(self) -> tuple[Optional[str], Optional[str]]:
+        """
+        Obtém configurações do pfSense da instituição.
+        
+        Returns:
+            Tupla (url, key) ou (None, None) se não encontrado
+        """
+        config = self._get_institution_config()
+        if config:
+            return config.get('pfsense_base_url'), config.get('pfsense_key')
+        return None, None
     
     def save_aliases_data(self, aliases_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -49,60 +94,94 @@ class AliasService:
                 raise ValueError("Dados de aliases inválidos")
             
             for alias_data in data:
-                # Normalizar pf_id (0 é válido no pfSense)
+                # Normalizar pf_id (0 é válido no pfSense) - mas NÃO usar como identificador único
+                # O pf_id é apenas uma referência, não um identificador único entre diferentes pfSenses
                 raw_id = alias_data.get('id')
                 normalized_pf_id = raw_id if (isinstance(raw_id, int) and raw_id >= 0) else None
                 alias_name = alias_data['name']
 
-                # 1) Procurar por nome (estável) primeiro
-                record_by_name = (
-                    self.db.query(PfSenseAlias)
-                    .filter(PfSenseAlias.name == alias_name)
-                    .first()
-                )
+                # Determinar institution_id ANTES de buscar (CRÍTICO para múltiplas redes)
+                institution_id = self.institution_id
+                if not institution_id and self.user_id:
+                    config = self._get_institution_config()
+                    if config:
+                        institution_id = config.get('institution_id')
+                
+                # Garantir que o institution_id está definido
+                if not institution_id:
+                    logger.warning(f"⚠️ institution_id não definido ao salvar alias '{alias_name}'. Usando None.")
+                    continue  # Pular aliases sem institution_id para evitar confusão
+                
+                logger.info(f"💾 Sincronizando alias '{alias_name}' para institution_id: {institution_id} (pf_id do pfSense: {normalized_pf_id})")
 
-                # 2) Procurar por pf_id (pode ter mudado de dono)
-                record_by_pf_id = None
-                if normalized_pf_id is not None:
-                    record_by_pf_id = (
+                # BUSCAR APENAS POR nome + institution_id (único identificador válido)
+                # NÃO usar pf_id como identificador pois cada pfSense tem seus próprios IDs
+                existing_alias = None
+                if institution_id is not None:
+                    existing_alias = (
                         self.db.query(PfSenseAlias)
-                        .filter(PfSenseAlias.pf_id == normalized_pf_id)
+                        .filter(
+                            PfSenseAlias.name == alias_name,
+                            PfSenseAlias.institution_id == institution_id
+                        )
                         .first()
                     )
-
-                if record_by_name:
-                    existing_alias = record_by_name
-                    # Se o pf_id atual pertence a outro registro, liberar o pf_id desse outro
-                    if record_by_pf_id and record_by_pf_id.id != existing_alias.id:
-                        record_by_pf_id.pf_id = None
-                    # Atualizar pf_id no registro correto (por nome)
+                    if existing_alias:
+                        logger.info(f"✅ Alias '{alias_name}' encontrado por nome+institution_id (ID: {existing_alias.id}, institution_id: {institution_id}, pf_id atual: {existing_alias.pf_id})")
+                    else:
+                        logger.info(f"➕ Alias '{alias_name}' não encontrado para institution_id: {institution_id}, será criado")
+                
+                if existing_alias:
+                    # Atualizar pf_id (apenas como referência, não como identificador)
                     if normalized_pf_id is not None and existing_alias.pf_id != normalized_pf_id:
+                        logger.info(f"🔄 Atualizando pf_id do alias '{alias_name}' de {existing_alias.pf_id} para {normalized_pf_id}")
                         existing_alias.pf_id = normalized_pf_id
-                    # Atualizar campos
+                    
+                    # Atualizar campos do alias
                     existing_alias.alias_type = alias_data['type']
                     existing_alias.descr = alias_data.get('descr')
                     existing_alias.updated_at = datetime.utcnow()
                     aliases_updated += 1
-                elif record_by_pf_id:
-                    # Não existe por nome, mas existe por pf_id: renomear este registro para o nome atual
-                    existing_alias = record_by_pf_id
-                    existing_alias.name = alias_name
-                    existing_alias.alias_type = alias_data['type']
-                    existing_alias.descr = alias_data.get('descr')
-                    existing_alias.updated_at = datetime.utcnow()
-                    aliases_updated += 1
-                else:
-                    # Novo registro
-                    new_alias = PfSenseAlias(
-                        pf_id=normalized_pf_id,
-                        name=alias_name,
-                        alias_type=alias_data['type'],
-                        descr=alias_data.get('descr')
-                    )
-                    self.db.add(new_alias)
-                    self.db.flush()
-                    aliases_saved += 1
-                    existing_alias = new_alias
+                    logger.info(f"✅ Alias '{alias_name}' atualizado (ID: {existing_alias.id}, institution_id: {institution_id})")
+                if not existing_alias:
+                    # VERIFICAÇÃO FINAL: garantir que não existe alias com mesmo nome + institution_id
+                    # (pode ter sido criado por outra thread/processo durante a sincronização)
+                    final_check = None
+                    if institution_id is not None:
+                        final_check = (
+                            self.db.query(PfSenseAlias)
+                            .filter(
+                                PfSenseAlias.name == alias_name,
+                                PfSenseAlias.institution_id == institution_id
+                            )
+                            .first()
+                        )
+                    
+                    if final_check:
+                        logger.info(f"🔄 Alias '{alias_name}' encontrado na verificação final (ID: {final_check.id}), usando existente")
+                        existing_alias = final_check
+                        # Atualizar pf_id e campos
+                        if normalized_pf_id is not None and final_check.pf_id != normalized_pf_id:
+                            final_check.pf_id = normalized_pf_id
+                        final_check.alias_type = alias_data['type']
+                        final_check.descr = alias_data.get('descr')
+                        final_check.updated_at = datetime.utcnow()
+                        aliases_updated += 1
+                    else:
+                        # Criar novo registro APENAS se realmente não existe
+                        logger.info(f"➕ Criando novo alias '{alias_name}' para institution_id: {institution_id} (pf_id: {normalized_pf_id})")
+                        new_alias = PfSenseAlias(
+                            pf_id=normalized_pf_id,  # Apenas como referência, não como identificador
+                            name=alias_name,
+                            alias_type=alias_data['type'],
+                            descr=alias_data.get('descr'),
+                            institution_id=institution_id
+                        )
+                        self.db.add(new_alias)
+                        self.db.flush()
+                        aliases_saved += 1
+                        existing_alias = new_alias
+                        logger.info(f"✅ Novo alias '{alias_name}' criado (ID: {new_alias.id}, institution_id: {institution_id}, pf_id: {normalized_pf_id})")
                 
                 # Processar endereços (host/network)
                 if 'address' in alias_data and alias_data['address']:
@@ -151,12 +230,24 @@ class AliasService:
     def get_all_aliases(self) -> List[Dict[str, Any]]:
         """
         Obtém todos os aliases do banco de dados.
+        Filtra por instituição se institution_id ou user_id estiver configurado.
         
         Returns:
             Lista de aliases com endereços
         """
         try:
-            aliases = self.db.query(PfSenseAlias).all()
+            # Determinar institution_id se não estiver definido
+            institution_id = self.institution_id
+            if not institution_id and self.user_id:
+                config = self._get_institution_config()
+                if config:
+                    institution_id = config.get('institution_id')
+            
+            query = self.db.query(PfSenseAlias)
+            if institution_id is not None:
+                query = query.filter(PfSenseAlias.institution_id == institution_id)
+            
+            aliases = query.all()
             result = []
             
             for alias in aliases:
@@ -193,6 +284,7 @@ class AliasService:
     def get_alias_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         """
         Busca um alias específico por nome.
+        Filtra por instituição se institution_id ou user_id estiver configurado.
         
         Args:
             name: Nome do alias
@@ -201,11 +293,28 @@ class AliasService:
             Dados do alias ou None se não encontrado
         """
         try:
-            alias = self.db.query(PfSenseAlias).filter(
-                PfSenseAlias.name == name
-            ).first()
+            # Determinar institution_id se não estiver definido
+            institution_id = self.institution_id
+            if not institution_id and self.user_id:
+                config = self._get_institution_config()
+                if config:
+                    institution_id = config.get('institution_id')
             
-            if not alias:
+            query = self.db.query(PfSenseAlias).filter(
+                PfSenseAlias.name == name
+            )
+            if institution_id is not None:
+                query = query.filter(PfSenseAlias.institution_id == institution_id)
+                logger.debug(f"🔍 Buscando alias '{name}' com institution_id: {institution_id}")
+            else:
+                logger.warning(f"⚠️ Buscando alias '{name}' SEM institution_id (pode retornar alias de qualquer instituição)")
+            
+            alias = query.first()
+            
+            if alias:
+                logger.debug(f"✅ Alias '{name}' encontrado (ID: {alias.id}, institution_id: {alias.institution_id}, pf_id: {alias.pf_id})")
+            else:
+                logger.warning(f"⚠️ Alias '{name}' não encontrado para institution_id: {institution_id}")
                 return None
             
             addresses = self.db.query(PfSenseAliasAddress).filter(
@@ -238,6 +347,7 @@ class AliasService:
     def search_aliases(self, query: str) -> List[Dict[str, Any]]:
         """
         Busca aliases por termo.
+        Filtra por instituição se institution_id ou user_id estiver configurado.
         
         Args:
             query: Termo de busca
@@ -246,10 +356,21 @@ class AliasService:
             Lista de aliases encontrados
         """
         try:
-            aliases = self.db.query(PfSenseAlias).filter(
+            # Determinar institution_id se não estiver definido
+            institution_id = self.institution_id
+            if not institution_id and self.user_id:
+                config = self._get_institution_config()
+                if config:
+                    institution_id = config.get('institution_id')
+            
+            db_query = self.db.query(PfSenseAlias).filter(
                 PfSenseAlias.name.contains(query) |
                 PfSenseAlias.descr.contains(query)
-            ).all()
+            )
+            if institution_id is not None:
+                db_query = db_query.filter(PfSenseAlias.institution_id == institution_id)
+            
+            aliases = db_query.all()
             
             result = []
             for alias in aliases:
@@ -286,29 +407,46 @@ class AliasService:
     def get_alias_statistics(self) -> Dict[str, Any]:
         """
         Obtém estatísticas dos aliases.
+        Filtra por instituição se institution_id ou user_id estiver configurado.
         
         Returns:
             Estatísticas dos aliases
         """
         try:
-            total_aliases = self.db.query(PfSenseAlias).count()
-            total_addresses = self.db.query(PfSenseAliasAddress).count()
+            # Determinar institution_id se não estiver definido
+            institution_id = self.institution_id
+            if not institution_id and self.user_id:
+                config = self._get_institution_config()
+                if config:
+                    institution_id = config.get('institution_id')
             
-            # Contar por tipo
+            query = self.db.query(PfSenseAlias)
+            if institution_id is not None:
+                query = query.filter(PfSenseAlias.institution_id == institution_id)
+            
+            total_aliases = query.count()
+            
+            # Contar endereços apenas dos aliases filtrados
+            alias_ids = [a.id for a in query.all()]
+            total_addresses = self.db.query(PfSenseAliasAddress).filter(
+                PfSenseAliasAddress.alias_id.in_(alias_ids)
+            ).count() if alias_ids else 0
+            
+            # Contar por tipo (usando query filtrada)
             aliases_by_type = {}
-            type_counts = self.db.query(PfSenseAlias.alias_type).all()
-            for alias_type in type_counts:
-                type_name = alias_type[0]
+            type_counts = query.all()
+            for alias in type_counts:
+                type_name = alias.alias_type
                 aliases_by_type[type_name] = aliases_by_type.get(type_name, 0) + 1
             
-            # Contar criados hoje
+            # Contar criados hoje (usando query filtrada)
             today = date.today()
-            created_today = self.db.query(PfSenseAlias).filter(
+            created_today = query.filter(
                 PfSenseAlias.created_at >= today
             ).count()
             
-            # Contar atualizados hoje
-            updated_today = self.db.query(PfSenseAlias).filter(
+            # Contar atualizados hoje (usando query filtrada)
+            updated_today = query.filter(
                 PfSenseAlias.updated_at >= today
             ).count()
             
@@ -335,21 +473,34 @@ class AliasService:
             Dados do alias criado
         """
         try:
-            # Verificar se já existe
-            existing = self.db.query(PfSenseAlias).filter(
+            # Determinar institution_id se não estiver definido
+            institution_id = self.institution_id
+            if not institution_id and self.user_id:
+                config = self._get_institution_config()
+                if config:
+                    institution_id = config.get('institution_id')
+            
+            # Verificar se já existe (considerando instituição)
+            query = self.db.query(PfSenseAlias).filter(
                 PfSenseAlias.name == alias_data['name']
-            ).first()
+            )
+            if institution_id is not None:
+                query = query.filter(PfSenseAlias.institution_id == institution_id)
+            
+            existing = query.first()
             
             if existing:
                 raise ValueError(f"Alias '{alias_data['name']}' já existe")
             
-            # Criar no pfSense primeiro
+            # Criar no pfSense primeiro usando configurações da instituição
             pfsense_result = cadastrar_alias_pfsense(
                 name=alias_data['name'],
                 alias_type=alias_data['alias_type'],
                 descr=alias_data['descr'],
                 address=[addr['address'] for addr in alias_data['addresses']],
-                detail=[addr.get('detail', '') for addr in alias_data['addresses']]
+                detail=[addr.get('detail', '') for addr in alias_data['addresses']],
+                user_id=self.user_id,
+                institution_id=self.institution_id
             )
             
             # Se sucesso no pfSense, salvar no banco
@@ -360,11 +511,19 @@ class AliasService:
                 if not pf_id or pf_id == 0:
                     pf_id = None
                 
+                # Determinar institution_id se não estiver definido
+                institution_id = self.institution_id
+                if not institution_id and self.user_id:
+                    config = self._get_institution_config()
+                    if config:
+                        institution_id = config.get('institution_id')
+                
                 new_alias = PfSenseAlias(
                     pf_id=pf_id,
                     name=alias_data['name'],
                     alias_type=alias_data['alias_type'],
-                    descr=alias_data['descr']
+                    descr=alias_data['descr'],
+                    institution_id=institution_id
                 )
                 self.db.add(new_alias)
                 self.db.flush()
@@ -383,7 +542,10 @@ class AliasService:
                 # Aplicar mudanças no firewall do pfSense
                 try:
                     from services_firewalls.pfsense_client import aplicar_mudancas_firewall_pfsense
-                    aplicar_mudancas_firewall_pfsense()
+                    aplicar_mudancas_firewall_pfsense(
+                        user_id=self.user_id,
+                        institution_id=self.institution_id
+                    )
                     logger.info(f"Mudanças aplicadas no firewall após criar alias '{alias_data['name']}'")
                 except Exception as apply_error:
                     logger.error(f"Erro ao aplicar mudanças no firewall: {apply_error}")
@@ -419,10 +581,21 @@ class AliasService:
             Dados do alias atualizado
         """
         try:
-            # Buscar o alias no banco de dados
-            alias = self.db.query(PfSenseAlias).filter(
+            # Determinar institution_id se não estiver definido
+            institution_id = self.institution_id
+            if not institution_id and self.user_id:
+                config = self._get_institution_config()
+                if config:
+                    institution_id = config.get('institution_id')
+            
+            # Buscar o alias no banco de dados (considerando instituição)
+            query = self.db.query(PfSenseAlias).filter(
                 PfSenseAlias.name == alias_name
-            ).first()
+            )
+            if institution_id is not None:
+                query = query.filter(PfSenseAlias.institution_id == institution_id)
+            
+            alias = query.first()
             
             if not alias:
                 raise ValueError(f"Alias '{alias_name}' não encontrado")
@@ -466,19 +639,123 @@ class AliasService:
             
             # Atualizar no pfSense se houver dados para atualizar
             if pfsense_data:
-                from services_firewalls.pfsense_client import atualizar_alias_pfsense
+                from services_firewalls.pfsense_client import atualizar_alias_pfsense, obter_alias_pfsense
                 
-                # Usar o pf_id do alias para a atualização
-                if alias.pf_id is None:
-                    raise ValueError(f"Alias '{alias_name}' não possui pf_id válido para atualização no pfSense")
+                # Garantir que temos institution_id definido
+                if not institution_id:
+                    raise ValueError(f"institution_id não definido. Não é possível atualizar alias no pfSense sem saber qual instituição usar.")
                 
+                logger.info(f"🔄 Buscando alias '{alias_name}' no pfSense da instituição {institution_id} (user_id: {self.user_id})")
+                
+                # Buscar o pf_id correto do alias no pfSense da instituição do usuário
+                # O pf_id no banco pode estar incorreto (ex: 0 pode ser de outro alias de outra instituição)
+                # SEMPRE buscar no pfSense da instituição correta para obter o ID correto
+                pf_id_to_use = None
+                
+                try:
+                    # SEMPRE buscar no pfSense da instituição do usuário para obter o ID correto
+                    logger.info(f"🔍 Buscando alias '{alias_name}' no pfSense da instituição {institution_id}...")
+                    pfsense_alias = obter_alias_pfsense(
+                        name=alias_name,
+                        user_id=self.user_id,
+                        institution_id=self.institution_id
+                    )
+                    if pfsense_alias and isinstance(pfsense_alias, dict):
+                        # Extrair o ID do alias do pfSense da instituição correta
+                        pf_id_to_use = pfsense_alias.get('id')
+                        pfsense_name = pfsense_alias.get('name')
+                        
+                        if pfsense_name == alias_name:
+                            # ID 0 é válido no pfSense (primeiro alias criado)
+                            if pf_id_to_use is not None:
+                                logger.info(f"✅ pf_id encontrado no pfSense da instituição {institution_id}: {pf_id_to_use}")
+                                # Atualizar o pf_id no banco (sempre do pfSense da instituição correta)
+                                alias.pf_id = pf_id_to_use
+                            else:
+                                logger.warning(f"⚠️ Alias '{alias_name}' encontrado no pfSense mas sem ID")
+                                # Usar 0 como fallback
+                                pf_id_to_use = 0
+                                alias.pf_id = 0
+                        else:
+                            logger.warning(f"⚠️ Alias encontrado no pfSense tem nome diferente: '{pfsense_name}' != '{alias_name}'")
+                            raise ValueError(f"Alias encontrado no pfSense não corresponde ao nome esperado")
+                    else:
+                        # Alias não existe no pfSense da instituição, criar
+                        logger.info(f"➕ Alias '{alias_name}' não encontrado no pfSense da instituição {institution_id}, será criado")
+                        raise ValueError(f"Alias '{alias_name}' não encontrado no pfSense da instituição {institution_id}")
+                except ValueError as ve:
+                    # Se não encontrou ou tem problema, criar o alias no pfSense
+                    logger.info(f"🔨 Criando alias '{alias_name}' no pfSense da instituição {institution_id}...")
+                    from services_firewalls.pfsense_client import cadastrar_alias_pfsense
+                    create_result = cadastrar_alias_pfsense(
+                        name=alias_name,
+                        alias_type=alias.alias_type,
+                        descr=alias.descr or f'Alias {alias_name}',
+                        address=[],  # Criar vazio, será preenchido depois
+                        detail=[],
+                        user_id=self.user_id,
+                        institution_id=self.institution_id
+                    )
+                    if create_result.get('status') == 'ok':
+                        new_pf_id = create_result.get('result', {}).get('data', {}).get('id')
+                        if new_pf_id is not None:
+                            pf_id_to_use = new_pf_id
+                            alias.pf_id = new_pf_id
+                            logger.info(f"✅ Alias '{alias_name}' criado no pfSense da instituição {institution_id} com ID: {pf_id_to_use}")
+                        else:
+                            # Se não retornou ID, usar 0 (pode ser o primeiro alias)
+                            pf_id_to_use = 0
+                            alias.pf_id = 0
+                            logger.info(f"✅ Alias '{alias_name}' criado no pfSense (ID não retornado, usando 0)")
+                    else:
+                        # Se o erro for que o alias já existe, buscar novamente
+                        error_msg = str(create_result)
+                        if "must be unique" in error_msg or "already exists" in error_msg.lower() or "FIELD_MUST_BE_UNIQUE" in error_msg:
+                            logger.info(f"ℹ️ Alias '{alias_name}' já existe no pfSense, buscando novamente...")
+                            pfsense_alias = obter_alias_pfsense(
+                                name=alias_name,
+                                user_id=self.user_id,
+                                institution_id=self.institution_id
+                            )
+                            if pfsense_alias and isinstance(pfsense_alias, dict):
+                                pf_id_to_use = pfsense_alias.get('id', 0)
+                                alias.pf_id = pf_id_to_use
+                                logger.info(f"✅ Alias '{alias_name}' encontrado no pfSense com ID: {pf_id_to_use}")
+                            else:
+                                raise ValueError(f"Erro ao criar alias no pfSense: {create_result}")
+                        else:
+                            raise ValueError(f"Erro ao criar alias no pfSense: {create_result}")
+                except Exception as e:
+                    # Se falhou ao criar, verificar se já existe
+                    error_str = str(e)
+                    if "must be unique" in error_str or "already exists" in error_str.lower() or "FIELD_MUST_BE_UNIQUE" in error_str or "400" in error_str:
+                        logger.info(f"ℹ️ Alias '{alias_name}' já existe no pfSense, buscando novamente...")
+                        pfsense_alias = obter_alias_pfsense(
+                            name=alias_name,
+                            user_id=self.user_id,
+                            institution_id=self.institution_id
+                        )
+                        if pfsense_alias and isinstance(pfsense_alias, dict):
+                            pf_id_to_use = pfsense_alias.get('id', 0)
+                            alias.pf_id = pf_id_to_use
+                            logger.info(f"✅ Alias '{alias_name}' encontrado no pfSense com ID: {pf_id_to_use}")
+                        else:
+                            logger.error(f"Erro ao buscar/criar alias '{alias_name}' no pfSense da instituição {institution_id}: {e}")
+                            raise ValueError(f"Não foi possível encontrar o alias '{alias_name}' no pfSense após erro de criação: {e}")
+                    else:
+                        logger.error(f"Erro ao buscar/criar alias '{alias_name}' no pfSense da instituição {institution_id}: {e}")
+                        raise ValueError(f"Não foi possível encontrar ou criar o alias '{alias_name}' no pfSense da instituição {institution_id}: {e}")
+                
+                logger.info(f"🔄 Atualizando alias '{alias_name}' no pfSense usando pf_id: {pf_id_to_use}")
                 pfsense_result = atualizar_alias_pfsense(
-                    alias_id=alias.pf_id,
+                    alias_id=pf_id_to_use,
                     name=alias_name,
                     alias_type=pfsense_data.get('alias_type'),
                     descr=pfsense_data.get('descr'),
                     address=pfsense_data.get('address'),
-                    detail=pfsense_data.get('detail')
+                    detail=pfsense_data.get('detail'),
+                    user_id=self.user_id,
+                    institution_id=self.institution_id
                 )
                 
                 if pfsense_result.get('status') != 'ok':
@@ -487,7 +764,10 @@ class AliasService:
                 # Aplicar mudanças no firewall do pfSense
                 try:
                     from services_firewalls.pfsense_client import aplicar_mudancas_firewall_pfsense
-                    aplicar_mudancas_firewall_pfsense()
+                    aplicar_mudancas_firewall_pfsense(
+                        user_id=self.user_id,
+                        institution_id=self.institution_id
+                    )
                     logger.info(f"Mudanças aplicadas no firewall após atualizar alias '{alias_name}'")
                 except Exception as apply_error:
                     logger.error(f"Erro ao aplicar mudanças no firewall: {apply_error}")
@@ -528,10 +808,21 @@ class AliasService:
             Dados do alias atualizado
         """
         try:
-            # Buscar o alias no banco de dados
-            alias = self.db.query(PfSenseAlias).filter(
+            # Determinar institution_id se não estiver definido
+            institution_id = self.institution_id
+            if not institution_id and self.user_id:
+                config = self._get_institution_config()
+                if config:
+                    institution_id = config.get('institution_id')
+            
+            # Buscar o alias no banco de dados (considerando instituição)
+            query = self.db.query(PfSenseAlias).filter(
                 PfSenseAlias.name == alias_name
-            ).first()
+            )
+            if institution_id is not None:
+                query = query.filter(PfSenseAlias.institution_id == institution_id)
+            
+            alias = query.first()
             
             if not alias:
                 raise ValueError(f"Alias '{alias_name}' não encontrado")
@@ -577,42 +868,123 @@ class AliasService:
             
             # Atualizar no pfSense se houver novos endereços
             if addresses_to_add:
-                from services_firewalls.pfsense_client import atualizar_alias_pfsense
+                from services_firewalls.pfsense_client import atualizar_alias_pfsense, obter_alias_pfsense
                 
-                # Se pf_id é None, tentar buscar o alias no pfSense pelo nome
-                alias_id = alias.pf_id
-                if alias_id is None:
-                    logger.warning(f"Alias {alias_name} não tem pf_id, tentando buscar no pfSense pelo nome")
-                    # Buscar alias no pfSense pelo nome para obter o ID
-                    try:
-                        from services_firewalls.pfsense_client import listar_aliases_pfsense
-                        pfsense_aliases = listar_aliases_pfsense()
-                        if isinstance(pfsense_aliases, dict) and 'data' in pfsense_aliases:
-                            aliases_data = pfsense_aliases['data']
-                        else:
-                            aliases_data = pfsense_aliases
+                # Garantir que temos institution_id definido
+                if not institution_id:
+                    raise ValueError(f"institution_id não definido. Não é possível adicionar endereços ao alias no pfSense sem saber qual instituição usar.")
+                
+                logger.info(f"🔄 Buscando alias '{alias_name}' no pfSense da instituição {institution_id} (user_id: {self.user_id})")
+                
+                # SEMPRE buscar o pf_id no pfSense da instituição do usuário
+                # Não confiar no pf_id do banco, pois pode ser de outra instituição
+                alias_id = None
+                
+                # SEMPRE buscar no pfSense da instituição do usuário para obter o ID correto
+                logger.info(f"🔍 Buscando alias '{alias_name}' no pfSense da instituição {institution_id}...")
+                try:
+                    pfsense_alias = obter_alias_pfsense(
+                        name=alias_name,
+                        user_id=self.user_id,
+                        institution_id=self.institution_id
+                    )
+                    
+                    if pfsense_alias and isinstance(pfsense_alias, dict):
+                        # Extrair o ID do alias do pfSense da instituição correta
+                        alias_id = pfsense_alias.get('id')
+                        pfsense_name = pfsense_alias.get('name')
                         
-                        for pfsense_alias in aliases_data:
-                            if pfsense_alias.get('name') == alias_name:
-                                alias_id = pfsense_alias.get('id')
-                                # Atualizar pf_id no banco
+                        if pfsense_name == alias_name:
+                            # ID 0 é válido no pfSense (primeiro alias criado)
+                            if alias_id is not None:
+                                logger.info(f"✅ pf_id encontrado no pfSense da instituição {institution_id}: {alias_id}")
+                                # Atualizar o pf_id no banco (sempre do pfSense da instituição correta)
                                 alias.pf_id = alias_id
-                                logger.info(f"pf_id {alias_id} encontrado para alias {alias_name}")
-                                break
-                        
-                        if alias_id is None:
-                            logger.error(f"Alias {alias_name} não encontrado no pfSense")
-                            raise ValueError(f"Alias {alias_name} não encontrado no pfSense")
-                            
-                    except Exception as e:
-                        logger.error(f"Erro ao buscar alias no pfSense: {e}")
-                        raise ValueError(f"Erro ao buscar alias {alias_name} no pfSense: {e}")
+                            else:
+                                logger.warning(f"⚠️ Alias '{alias_name}' encontrado no pfSense mas sem ID")
+                                # Mesmo sem ID, podemos usar o alias existente
+                                # Tentar obter o ID de outra forma ou usar None
+                                alias_id = 0  # Usar 0 como fallback
+                        else:
+                            logger.warning(f"⚠️ Alias encontrado no pfSense tem nome diferente: '{pfsense_name}' != '{alias_name}'")
+                            alias_id = None  # Não usar este alias
+                    else:
+                        # Alias não existe no pfSense da instituição, tentar criar
+                        logger.info(f"➕ Alias '{alias_name}' não encontrado no pfSense da instituição {institution_id}, tentando criar...")
+                        alias_id = None
+                except Exception as e:
+                    logger.warning(f"⚠️ Erro ao buscar alias no pfSense: {e}")
+                    alias_id = None
+                
+                # Se não encontrou o alias no pfSense, tentar criar
+                if alias_id is None:
+                    try:
+                        logger.info(f"🔨 Criando alias '{alias_name}' no pfSense da instituição {institution_id}...")
+                        from services_firewalls.pfsense_client import cadastrar_alias_pfsense
+                        create_result = cadastrar_alias_pfsense(
+                            name=alias_name,
+                            alias_type=alias.alias_type,
+                            descr=alias.descr or f'Alias {alias_name}',
+                            address=current_addresses,  # Criar com os endereços atuais
+                            detail=current_details,
+                            user_id=self.user_id,
+                            institution_id=self.institution_id
+                        )
+                        if create_result.get('status') == 'ok':
+                            new_pf_id = create_result.get('result', {}).get('data', {}).get('id')
+                            if new_pf_id is not None:
+                                alias_id = new_pf_id
+                                alias.pf_id = new_pf_id
+                                logger.info(f"✅ Alias '{alias_name}' criado no pfSense da instituição {institution_id} com ID: {alias_id}")
+                            else:
+                                # Se não retornou ID, usar 0 (pode ser o primeiro alias)
+                                alias_id = 0
+                                alias.pf_id = 0
+                                logger.info(f"✅ Alias '{alias_name}' criado no pfSense (ID não retornado, usando 0)")
+                        else:
+                            # Se o erro for que o alias já existe, buscar novamente
+                            error_msg = str(create_result)
+                            if "must be unique" in error_msg or "already exists" in error_msg.lower() or "FIELD_MUST_BE_UNIQUE" in error_msg:
+                                logger.info(f"ℹ️ Alias '{alias_name}' já existe no pfSense, buscando novamente...")
+                                pfsense_alias = obter_alias_pfsense(
+                                    name=alias_name,
+                                    user_id=self.user_id,
+                                    institution_id=self.institution_id
+                                )
+                                if pfsense_alias and isinstance(pfsense_alias, dict):
+                                    alias_id = pfsense_alias.get('id', 0)
+                                    alias.pf_id = alias_id
+                                    logger.info(f"✅ Alias '{alias_name}' encontrado no pfSense com ID: {alias_id}")
+                                else:
+                                    raise ValueError(f"Erro ao criar alias no pfSense: {create_result}")
+                            else:
+                                raise ValueError(f"Erro ao criar alias no pfSense: {create_result}")
+                    except Exception as create_error:
+                        # Se falhou ao criar, verificar se já existe
+                        error_str = str(create_error)
+                        if "must be unique" in error_str or "already exists" in error_str.lower() or "FIELD_MUST_BE_UNIQUE" in error_str or "400" in error_str:
+                            logger.info(f"ℹ️ Alias '{alias_name}' já existe no pfSense, buscando novamente...")
+                            pfsense_alias = obter_alias_pfsense(
+                                name=alias_name,
+                                user_id=self.user_id,
+                                institution_id=self.institution_id
+                            )
+                            if pfsense_alias and isinstance(pfsense_alias, dict):
+                                alias_id = pfsense_alias.get('id', 0)
+                                alias.pf_id = alias_id
+                                logger.info(f"✅ Alias '{alias_name}' encontrado no pfSense com ID: {alias_id}")
+                            else:
+                                raise ValueError(f"Não foi possível encontrar o alias '{alias_name}' no pfSense após erro de criação: {create_error}")
+                        else:
+                            raise ValueError(f"Erro ao criar alias no pfSense: {create_error}")
                 
                 pfsense_result = atualizar_alias_pfsense(
                     alias_id=alias_id,
                     name=alias_name,
                     address=current_addresses,
-                    detail=current_details
+                    detail=current_details,
+                    user_id=self.user_id,
+                    institution_id=self.institution_id
                 )
                 
                 if pfsense_result.get('status') != 'ok':
@@ -623,7 +995,10 @@ class AliasService:
                 # Aplicar mudanças no firewall do pfSense
                 try:
                     from services_firewalls.pfsense_client import aplicar_mudancas_firewall_pfsense
-                    aplicar_mudancas_firewall_pfsense()
+                    aplicar_mudancas_firewall_pfsense(
+                        user_id=self.user_id,
+                        institution_id=self.institution_id
+                    )
                     logger.info(f"Mudanças aplicadas no firewall após adicionar endereços ao alias '{alias_name}'")
                 except Exception as apply_error:
                     logger.error(f"Erro ao aplicar mudanças no firewall: {apply_error}")

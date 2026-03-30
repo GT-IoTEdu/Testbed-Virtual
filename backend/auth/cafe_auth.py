@@ -74,6 +74,16 @@ async def cafe_callback(request: Request):
     try:
         db_user = db.query(User).filter(User.email == email).one_or_none()
         if db_user:
+            # Verificar se o usuário está ativo antes de permitir login
+            if not db_user.is_active:
+                from fastapi import HTTPException
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"🚫 Tentativa de login com usuário inativo: {email}")
+                raise HTTPException(
+                    status_code=403,
+                    detail="Sua conta está desativada. Entre em contato com o administrador do sistema."
+                )
             db_user.nome = nome
             db_user.instituicao = instituicao
         else:

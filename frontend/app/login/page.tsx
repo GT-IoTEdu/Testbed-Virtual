@@ -17,9 +17,7 @@ export default function LoginPage() {
   const gotMessageRef = useRef(false);
   const pollTimerRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
-  const BACKEND_IP = process.env.NEXT_PUBLIC_IP_B;
-  const BACKEND_PORT = process.env.NEXT_PUBLIC_PORT_B;
-  const backend_url = `http://${BACKEND_IP}:${BACKEND_PORT}`;
+
   async function handleGoogleLogin() {
     setIsLoading(true);
     try {
@@ -27,7 +25,7 @@ export default function LoginPage() {
 
       // Verifica se o backend está acessível antes de abrir o popup
       try {
-        const response = await fetch(`${backend_url}/api/auth/health`, {
+        const response = await fetch("http://localhost:8000/api/auth/health", {
           method: "HEAD",
           mode: "no-cors",
         });
@@ -35,7 +33,7 @@ export default function LoginPage() {
       } catch (err) {
         console.error("Erro ao verificar backend:", err);
         alert(
-          `Servidor backend não está acessível. Verifique se está rodando em ${backend_url}`
+          "Servidor backend não está acessível. Verifique se está rodando em http://localhost:8000"
         );
         setIsLoading(false);
         return;
@@ -43,7 +41,7 @@ export default function LoginPage() {
 
       // Abre uma nova janela para o fluxo OAuth
       const popup = window.open(
-        backend_url + '/api/auth/google/login',
+        "http://localhost:8000/api/auth/google/login",
         "googleLogin",
         "width=500,height=600"
       );
@@ -263,7 +261,7 @@ export default function LoginPage() {
                     onClick={() => {
                       try {
                         const p = window.open(
-                          backend_url + '/api/auth/google/login',
+                          "http://localhost:8000/api/auth/google/login",
                           "googleLogin",
                           "width=500,height=600"
                         );

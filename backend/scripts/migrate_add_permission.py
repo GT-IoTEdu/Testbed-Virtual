@@ -5,8 +5,11 @@ Script de migração para adicionar a coluna 'permission' à tabela 'users'.
 from sqlalchemy import create_engine, text
 import sys
 import os
+import logging
+from datetime import datetime
+
+# Adicionar o diretório backend ao path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import config
 import config
 
 def migrate_add_permission():

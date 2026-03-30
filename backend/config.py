@@ -42,6 +42,13 @@ IP_RANGE_START = os.getenv("IP_RANGE_START", "192.168.100.1")
 IP_RANGE_END = os.getenv("IP_RANGE_END", "192.168.100.254")
 IP_RANGE_EXCLUDED = os.getenv("IP_RANGE_EXCLUDED", "192.168.100.1,192.168.100.100,192.168.100.200")
 
+# Configurações de acesso administrativo
+# IMPORTANTE: O login administrativo é feito via Google OAuth.
+# Configure apenas o email do superusuário em SUPERUSER_ACCESS.
+# O sistema verificará automaticamente se o email autenticado via Google corresponde ao SUPERUSER_ACCESS.
+SUPERUSER_ACCESS = os.getenv("SUPERUSER_ACCESS", "admin@iotedu.local")
+# ADMIN_PASSWORD não é mais necessário - removido para usar apenas Google OAuth
+
 
 
 # Observação:

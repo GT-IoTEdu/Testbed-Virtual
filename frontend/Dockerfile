@@ -1,9 +1,9 @@
 FROM ubuntu:24.04
 
 WORKDIR /API_IoT_EDU
-RUN apt-get update && apt-get install -y ethtool iputils-ping iproute2 net-tools
+
 # Install system dependencies
-RUN  apt-get install -y \
+RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \

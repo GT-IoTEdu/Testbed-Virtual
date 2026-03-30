@@ -68,7 +68,7 @@ def test_endpoints():
         else:
             print(f"❌ Erro: {response.text}")
     except Exception as e:
-        print(f"❌ Erro AQUI: {e}")
+        print(f"❌ Erro: {e}")
     
     # Teste 2: Verificar endpoint GET /aliases
     print("\n2. Verificando endpoint GET /aliases")

@@ -1,0 +1,234 @@
+@startuml Fluxo de Operação - Sistema de Detecção e Bloqueio Automático
+
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 11
+skinparam roundcorner 10
+skinparam shadowing false
+
+title Sistema de Detecção e Bloqueio Automático\nFluxo de Operação com Tempos e Recursos
+
+' Definir participantes
+participant "Zeek Monitor\n(Background Thread)" as Monitor #LightBlue
+participant "ZeekService" as ZeekService #LightGreen
+participant "IncidentService" as IncidentService #LightYellow
+participant "AliasService" as AliasService #LightCoral
+participant "pfSense API" as PfSense #LightPink
+participant "Banco de Dados\nMySQL" as Database #LightGray
+participant "Firewall\npfSense" as Firewall #Orange
+
+' Estilo para notas de tempo
+note right of Monitor
+  <b>Intervalo: 3 segundos</b>
+  Monitora logs do Zeek
+end note
+
+== ETAPA 1: Monitoramento do Zeek ==
+
+Monitor -> ZeekService: GET /api/scanners/zeek/logs\n?logfile=notice.log&maxlines=100
+activate ZeekService
+
+ZeekService -> PfSense: Requisição HTTP\nGET /zeek-api/alert_data.php
+activate PfSense
+PfSense -> PfSense: Busca arquivo notice.log
+PfSense --> ZeekService: Retorna logs JSON
+deactivate PfSense
+
+ZeekService -> ZeekService: Analisa logs\nDetecta padrões de ataque
+ZeekService -> ZeekService: Cria objetos ZeekIncident
+
+note right of ZeekService
+  <b>Tempo: 2.281s</b>
+  CPU: 6.80%
+  RAM: 35.79 MB
+end note
+
+ZeekService --> Monitor: Retorna logs e incidentes
+deactivate ZeekService
+
+== ETAPA 2: Salvamento do Incidente ==
+
+Monitor -> IncidentService: POST /api/incidents/\n(Salva incidente detectado)
+activate IncidentService
+
+IncidentService -> Database: INSERT INTO zeek_incidents
+activate Database
+Database --> IncidentService: Incidente criado (ID)
+deactivate Database
+
+IncidentService -> IncidentService: Verifica se contém "Atacante"
+IncidentService -> IncidentService: Inicia Thread Background
+
+note right of IncidentService
+  <b>Tempo: 2.499s</b>
+  CPU: 13.70%
+  RAM: 35.79 MB
+end note
+
+IncidentService --> Monitor: Incidente salvo (ID)
+deactivate IncidentService
+
+== ETAPA 3: Processamento em Lote (Background Thread) ==
+
+Monitor -> Monitor: Thread Background inicia\n(Aguarda 0.5s para garantir commit)
+
+Monitor -> IncidentService: POST /api/incidents/process-batch\n?limit=10
+activate IncidentService
+
+IncidentService -> Database: SELECT * FROM zeek_incidents\nWHERE processed_at IS NULL
+activate Database
+Database --> IncidentService: Lista de incidentes não processados
+deactivate Database
+
+loop Para cada incidente "Atacante"
+    IncidentService -> Database: UPDATE zeek_incidents\nSET processed_at = NOW()
+    activate Database
+    Database --> IncidentService: Marcado como processado
+    deactivate Database
+    
+    IncidentService -> IncidentService: Chama _apply_auto_block()
+end
+
+note right of IncidentService
+  <b>Tempo: 3.222s</b>
+  CPU: 16.10%
+  RAM: 35.79 MB
+end note
+
+IncidentService --> Monitor: Processamento concluído
+deactivate IncidentService
+
+== ETAPA 4: Aplicação do Bloqueio Automático ==
+
+IncidentService -> AliasService: get_alias_by_name("Bloqueados")
+activate AliasService
+
+AliasService -> Database: SELECT * FROM pfsense_aliases\nWHERE name = 'Bloqueados'
+activate Database
+Database --> AliasService: Dados do alias
+deactivate Database
+
+AliasService -> PfSense: GET /api/v2/firewall/alias\n(Verifica no pfSense)
+activate PfSense
+PfSense --> AliasService: Dados do alias no pfSense
+deactivate PfSense
+
+note right of AliasService
+  <b>Tempo: 2.245s</b>
+  CPU: 16.70%
+  RAM: 35.79 MB
+end note
+
+AliasService --> IncidentService: Alias "Bloqueados" encontrado
+deactivate AliasService
+
+' Verificar alias Autorizados (se necessário)
+IncidentService -> AliasService: get_alias_by_name("Autorizados")
+activate AliasService
+AliasService -> Database: Verifica se IP está em "Autorizados"
+activate Database
+Database --> AliasService: Resultado
+deactivate Database
+
+alt IP está em "Autorizados"
+    AliasService -> AliasService: Remove IP de "Autorizados"
+    AliasService -> PfSense: PUT /api/v2/firewall/alias\n(Atualiza alias)
+    activate PfSense
+    PfSense --> AliasService: Atualizado
+    deactivate PfSense
+end
+
+AliasService --> IncidentService: IP removido de "Autorizados" (se estava)
+deactivate AliasService
+
+== ETAPA 5: Adicionar IP ao Alias Bloqueados ==
+
+IncidentService -> AliasService: add_addresses_to_alias("Bloqueados", IP)
+activate AliasService
+
+AliasService -> Database: INSERT INTO pfsense_alias_addresses\n(alias_id, address, detail)
+activate Database
+Database --> AliasService: Endereço adicionado
+deactivate Database
+
+AliasService -> PfSense: PUT /api/v2/firewall/alias/{id}\n(Atualiza alias no pfSense)
+activate PfSense
+PfSense -> PfSense: Atualiza configuração do alias
+PfSense --> AliasService: Alias atualizado
+deactivate PfSense
+
+note right of AliasService
+  <b>Tempo: 2.233s</b>
+  CPU: 25.00%
+  RAM: 35.85 MB
+end note
+
+AliasService --> IncidentService: IP adicionado ao alias
+deactivate AliasService
+
+== ETAPA 6: Aplicar Mudanças no Firewall ==
+
+IncidentService -> PfSense: POST /api/v2/firewall/apply
+activate PfSense
+
+PfSense -> PfSense: Valida configurações
+PfSense -> PfSense: Reconstrói tabelas de firewall
+PfSense -> PfSense: Aplica regras em ordem
+PfSense -> Firewall: Atualiza regras ativas
+activate Firewall
+Firewall -> Firewall: Encerra conexões do IP bloqueado
+Firewall --> PfSense: Mudanças aplicadas
+deactivate Firewall
+
+note right of PfSense
+  <b>Tempo: 2.326s</b>
+  CPU: 38.90%
+  RAM: 35.85 MB
+  <b>Maior carga de CPU</b>
+end note
+
+PfSense --> IncidentService: Mudanças aplicadas com sucesso
+deactivate PfSense
+
+== ETAPA 7: Finalização ==
+
+IncidentService -> Database: UPDATE zeek_incidents\nSET status = 'resolved'
+activate Database
+Database --> IncidentService: Status atualizado
+deactivate Database
+
+IncidentService -> IncidentService: create_admin_blocking_feedback()
+IncidentService -> Database: INSERT INTO blocking_feedback_history
+activate Database
+Database --> IncidentService: Feedback criado
+deactivate Database
+
+note right of IncidentService
+  <b>Bloqueio Completo!</b>
+  IP bloqueado efetivamente
+  Atacante perde acesso
+end note
+
+IncidentService --> Monitor: Processo concluído
+deactivate IncidentService
+
+== Resumo ==
+
+note over Monitor, Firewall
+  <b>TEMPO TOTAL: ~14.8 segundos</b>
+  
+  <b>Distribuição:</b>
+  1. get_logs: 2.281s (15.4%)
+  2. save_incident: 2.499s (16.9%)
+  3. process_incidents: 3.222s (21.8%)
+  4. get_alias: 2.245s (15.2%)
+  5. add_addresses: 2.233s (15.1%)
+  6. apply_firewall: 2.326s (15.7%)
+  
+  <b>Recursos:</b>
+  - CPU Máximo: 38.90% (apply_firewall)
+  - RAM: 35.79-35.85 MB (estável)
+end note
+
+@enduml
+

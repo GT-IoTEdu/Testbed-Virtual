@@ -23,8 +23,24 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
--- Estrutura para tabela `blocking_feedback_history`
+-- Estrutura para tabela `institutions`
 --
+
+CREATE TABLE `institutions` (
+  `id` int(11) NOT NULL,
+  `nome` varchar(255) NOT NULL COMMENT 'Nome da instituição',
+  `cidade` varchar(255) NOT NULL COMMENT 'Cidade onde está localizada',
+  `pfsense_base_url` varchar(500) NOT NULL COMMENT 'URL base para conectar no pfSense',
+  `pfsense_key` varchar(500) NOT NULL COMMENT 'Chave de acesso ao pfSense',
+  `zeek_base_url` varchar(500) NOT NULL COMMENT 'URL base para conectar no Zeek',
+  `zeek_key` varchar(500) NOT NULL COMMENT 'Chave de acesso ao Zeek',
+  `ip_range_start` varchar(15) NOT NULL COMMENT 'IP inicial do range',
+  `ip_range_end` varchar(15) NOT NULL COMMENT 'IP final do range',
+  `is_active` tinyint(1) NOT NULL DEFAULT 1 COMMENT 'Se a instituição está ativa',
+  `created_at` datetime DEFAULT NULL COMMENT 'Data/hora de criação',
+  `updated_at` datetime DEFAULT NULL COMMENT 'Data/hora da última atualização'
+) ;
+
 
 CREATE TABLE `blocking_feedback_history` (
   `id` int(11) NOT NULL,
@@ -193,10 +209,9 @@ CREATE TABLE `user_device_assignments` (
 -- --------------------------------------------------------
 
 --
--- Estrutura para tabela `zeek_incidents`
+-- Estrutura para tabela `incidents` (workflow de incidentes de segurança)
 --
-
-CREATE TABLE `zeek_incidents` (
+CREATE TABLE `incidents` (
   `id` int(11) NOT NULL,
   `device_ip` varchar(15) NOT NULL COMMENT 'IP do dispositivo envolvido',
   `device_name` varchar(255) DEFAULT NULL COMMENT 'Nome do dispositivo',
@@ -205,13 +220,44 @@ CREATE TABLE `zeek_incidents` (
   `status` enum('NEW','INVESTIGATING','RESOLVED','FALSE_POSITIVE','ESCALATED') NOT NULL COMMENT 'Status do incidente',
   `description` text NOT NULL COMMENT 'Descrição detalhada',
   `detected_at` datetime NOT NULL COMMENT 'Data/hora da detecção',
-  `zeek_log_type` enum('HTTP','DNS','CONN','SSL','FILES','WEIRD','NOTICE') NOT NULL COMMENT 'Tipo de log do Zeek',
+  `zeek_log_type` enum('HTTP','DNS','CONN','SSL','FILES','WEIRD','NOTICE') NOT NULL COMMENT 'Tipo de log',
   `raw_log_data` text DEFAULT NULL COMMENT 'Dados brutos do log em JSON',
   `action_taken` text DEFAULT NULL COMMENT 'Ação tomada',
   `assigned_to` int(11) DEFAULT NULL COMMENT 'Usuário responsável',
   `notes` text DEFAULT NULL COMMENT 'Observações adicionais',
+  `processed_at` datetime DEFAULT NULL COMMENT 'Data/hora quando foi processado para bloqueio automático',
   `created_at` datetime DEFAULT NULL COMMENT 'Data de criação',
   `updated_at` datetime DEFAULT NULL COMMENT 'Data de atualização'
+) ;
+
+--
+-- Estrutura para tabela `zeek_alerts` (alertas SSE Zeek, mesmo padrão suricata_alerts/snort_alerts)
+--
+CREATE TABLE `zeek_alerts` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `institution_id` int(11) NOT NULL,
+  `detected_at` datetime NOT NULL,
+  `signature` varchar(500) NOT NULL,
+  `signature_id` varchar(50) DEFAULT NULL,
+  `severity` enum('LOW','MEDIUM','HIGH','CRITICAL') NOT NULL DEFAULT 'MEDIUM',
+  `src_ip` varchar(45) DEFAULT NULL,
+  `dest_ip` varchar(45) DEFAULT NULL,
+  `src_port` varchar(20) DEFAULT NULL,
+  `dest_port` varchar(20) DEFAULT NULL,
+  `protocol` varchar(20) DEFAULT NULL,
+  `category` varchar(255) DEFAULT NULL,
+  `raw_log_data` text DEFAULT NULL,
+  `processed_at` datetime DEFAULT NULL,
+  `created_at` datetime DEFAULT NULL,
+  `updated_at` datetime DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_zeek_alerts_institution_id` (`institution_id`),
+  KEY `idx_zeek_alerts_detected_at` (`detected_at`),
+  KEY `idx_zeek_alerts_severity` (`severity`),
+  KEY `idx_zeek_alerts_src_ip` (`src_ip`),
+  KEY `idx_zeek_alerts_dest_ip` (`dest_ip`),
+  KEY `idx_zeek_alerts_processed_at` (`processed_at`),
+  CONSTRAINT `zeek_alerts_ibfk_1` FOREIGN KEY (`institution_id`) REFERENCES `institutions` (`id`)
 ) ;
 
 --
@@ -219,8 +265,13 @@ CREATE TABLE `zeek_incidents` (
 --
 
 --
--- Índices de tabela `blocking_feedback_history`
+-- Índices de tabela `institutions`
 --
+ALTER TABLE `institutions`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `ix_institutions_nome` (`nome`),
+  ADD KEY `ix_institutions_id` (`id`);
+
 ALTER TABLE `blocking_feedback_history`
   ADD PRIMARY KEY (`id`),
   ADD KEY `ix_blocking_feedback_history_id` (`id`),
@@ -293,27 +344,31 @@ ALTER TABLE `user_device_assignments`
   ADD KEY `ix_user_device_assignments_id` (`id`);
 
 --
--- Índices de tabela `zeek_incidents`
+-- Índices de tabela `incidents`
 --
-ALTER TABLE `zeek_incidents`
+ALTER TABLE `incidents`
   ADD PRIMARY KEY (`id`),
   ADD KEY `assigned_to` (`assigned_to`),
   ADD KEY `idx_incident_severity` (`severity`),
-  ADD KEY `ix_zeek_incidents_device_ip` (`device_ip`),
-  ADD KEY `ix_zeek_incidents_id` (`id`),
+  ADD KEY `ix_incidents_device_ip` (`device_ip`),
+  ADD KEY `ix_incidents_id` (`id`),
   ADD KEY `idx_incident_status` (`status`),
   ADD KEY `idx_incident_detected_at` (`detected_at`),
   ADD KEY `idx_incident_device_ip` (`device_ip`),
   ADD KEY `idx_incident_log_type` (`zeek_log_type`),
-  ADD KEY `idx_incident_device_severity` (`device_ip`,`severity`);
+  ADD KEY `idx_incident_device_severity` (`device_ip`,`severity`),
+  ADD KEY `idx_incident_processed_at` (`processed_at`);
 
 --
 -- AUTO_INCREMENT para tabelas despejadas
 --
 
 --
--- AUTO_INCREMENT de tabela `blocking_feedback_history`
+-- AUTO_INCREMENT de tabela `institutions`
 --
+ALTER TABLE `institutions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
 ALTER TABLE `blocking_feedback_history`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
@@ -360,9 +415,9 @@ ALTER TABLE `user_device_assignments`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
--- AUTO_INCREMENT de tabela `zeek_incidents`
+-- AUTO_INCREMENT de tabela `incidents`
 --
-ALTER TABLE `zeek_incidents`
+ALTER TABLE `incidents`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
@@ -396,10 +451,10 @@ ALTER TABLE `user_device_assignments`
   ADD CONSTRAINT `user_device_assignments_ibfk_3` FOREIGN KEY (`assigned_by`) REFERENCES `users` (`id`);
 
 --
--- Restrições para tabelas `zeek_incidents`
+-- Restrições para tabelas `incidents`
 --
-ALTER TABLE `zeek_incidents`
-  ADD CONSTRAINT `zeek_incidents_ibfk_1` FOREIGN KEY (`assigned_to`) REFERENCES `users` (`id`);
+ALTER TABLE `incidents`
+  ADD CONSTRAINT `incidents_ibfk_1` FOREIGN KEY (`assigned_to`) REFERENCES `users` (`id`);
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

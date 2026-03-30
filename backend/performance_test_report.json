@@ -1,0 +1,246 @@
+{
+  "test_timestamp": "2025-11-05T17:28:34.791719",
+  "total_duration_seconds": 21.029665,
+  "metrics": [
+    {
+      "timestamp": "2025-11-05T17:28:13.754657",
+      "function_name": "ZeekService.get_logs",
+      "endpoint": "GET /api/scanners/zeek/logs",
+      "route": "/api/scanners/zeek/logs?logfile=notice.log&maxlines=100",
+      "duration_seconds": 2.280705,
+      "cpu_percent": 0.0,
+      "cpu_system_percent": 6.8,
+      "ram_mb": 35.78515625,
+      "ram_percent": 0.11011705391143925,
+      "ram_system_percent": 64.5,
+      "ram_system_available_mb": 11546.08984375,
+      "success": true,
+      "error": null,
+      "metadata": {
+        "success": false,
+        "message": "Log file not found: notice.log",
+        "log_type": "notice.log",
+        "total_lines": 0,
+        "logs": [],
+        "incidents": []
+      }
+    },
+    {
+      "timestamp": "2025-11-05T17:28:16.240851",
+      "function_name": "IncidentService.save_incident",
+      "endpoint": "POST /api/incidents/",
+      "route": "/api/incidents/",
+      "duration_seconds": 2.499115,
+      "cpu_percent": 0.0,
+      "cpu_system_percent": 13.7,
+      "ram_mb": 35.7890625,
+      "ram_percent": 0.11012907411162608,
+      "ram_system_percent": 64.5,
+      "ram_system_available_mb": 11544.03125,
+      "success": true,
+      "error": null,
+      "metadata": {
+        "id": 163,
+        "device_ip": "192.168.59.4",
+        "device_name": "Dispositivo de Teste",
+        "incident_type": "SQL Injection - Atacante",
+        "severity": "critical",
+        "status": "new",
+        "description": "Teste de performance - Bloqueio autom\u00e1tico",
+        "detected_at": "2025-11-05T17:28:16",
+        "zeek_log_type": "notice.log",
+        "action_taken": null,
+        "assigned_to": null,
+        "notes": null,
+        "created_at": "2025-11-05T17:28:18",
+        "updated_at": "2025-11-05T17:28:18"
+      }
+    },
+    {
+      "timestamp": "2025-11-05T17:28:23.943223",
+      "function_name": "IncidentService.process_incidents_for_auto_blocking",
+      "endpoint": "POST /api/incidents/process-batch",
+      "route": "/api/incidents/process-batch?limit=10",
+      "duration_seconds": 3.222147,
+      "cpu_percent": 0.0,
+      "cpu_system_percent": 16.1,
+      "ram_mb": 35.7890625,
+      "ram_percent": 0.11012907411162608,
+      "ram_system_percent": 64.1,
+      "ram_system_available_mb": 11664.3828125,
+      "success": true,
+      "error": null,
+      "metadata": {
+        "success": true,
+        "message": "Processamento conclu\u00eddo: 0 dispositivos bloqueados",
+        "statistics": {
+          "processed_count": 10,
+          "blocked_count": 0,
+          "skipped_count": 10,
+          "error_count": 0
+        },
+        "processed_incidents": [
+          {
+            "id": 129,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Suspicious User Agent",
+            "action": "skipped"
+          },
+          {
+            "id": 130,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Suspicious User Agent",
+            "action": "skipped"
+          },
+          {
+            "id": 131,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Suspicious User Agent",
+            "action": "skipped"
+          },
+          {
+            "id": 132,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Suspicious User Agent",
+            "action": "skipped"
+          },
+          {
+            "id": 133,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Suspicious User Agent",
+            "action": "skipped"
+          },
+          {
+            "id": 134,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Suspicious User Agent",
+            "action": "skipped"
+          },
+          {
+            "id": 127,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Possible DGA Domain",
+            "action": "skipped"
+          },
+          {
+            "id": 135,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Suspicious User Agent",
+            "action": "skipped"
+          },
+          {
+            "id": 136,
+            "device_ip": "192.168.59.1",
+            "incident_type": "Possible DGA Domain",
+            "action": "skipped"
+          },
+          {
+            "id": 126,
+            "device_ip": "192.168.100.1",
+            "incident_type": "Security Notice: CaptureLoss::Too_Little_Traffic",
+            "action": "skipped"
+          }
+        ]
+      }
+    },
+    {
+      "timestamp": "2025-11-05T17:28:27.370517",
+      "function_name": "AliasService.get_alias_by_name",
+      "endpoint": "GET /api/devices/aliases-db/Bloqueados",
+      "route": "/api/devices/aliases-db/Bloqueados",
+      "duration_seconds": 2.245298,
+      "cpu_percent": 0.0,
+      "cpu_system_percent": 16.7,
+      "ram_mb": 35.7890625,
+      "ram_percent": 0.11012907411162608,
+      "ram_system_percent": 64.0,
+      "ram_system_available_mb": 11687.80078125,
+      "success": true,
+      "error": null,
+      "metadata": {
+        "id": 2,
+        "pf_id": 1,
+        "name": "Bloqueados",
+        "alias_type": "host",
+        "descr": "Dispositivos com acesso Bloqueado",
+        "addresses": [
+          {
+            "address": "192.168.59.4",
+            "detail": "Bloqueado automaticamente - Incidente 163"
+          }
+        ],
+        "created_at": "2025-10-06T20:22:02",
+        "updated_at": "2025-11-05T20:28:19"
+      }
+    },
+    {
+      "timestamp": "2025-11-05T17:28:29.819863",
+      "function_name": "AliasService.add_addresses_to_alias",
+      "endpoint": "POST /api/devices/aliases-db/Bloqueados/add-addresses",
+      "route": "/api/devices/aliases-db/Bloqueados/add-addresses",
+      "duration_seconds": 2.232644,
+      "cpu_percent": 0.0,
+      "cpu_system_percent": 25.0,
+      "ram_mb": 35.8515625,
+      "ram_percent": 0.11032139731461515,
+      "ram_system_percent": 64.3,
+      "ram_system_available_mb": 11607.6953125,
+      "success": true,
+      "error": null,
+      "metadata": {
+        "id": 2,
+        "pf_id": 1,
+        "name": "Bloqueados",
+        "alias_type": "host",
+        "descr": "Dispositivos com acesso Bloqueado",
+        "addresses": [
+          {
+            "address": "192.168.59.4",
+            "detail": "Bloqueado automaticamente - Incidente 163"
+          }
+        ],
+        "created_at": "2025-10-06T20:22:02",
+        "updated_at": "2025-11-05T20:28:32"
+      }
+    },
+    {
+      "timestamp": "2025-11-05T17:28:32.255450",
+      "function_name": "pfsense_client.aplicar_mudancas_firewall_pfsense",
+      "endpoint": "POST /api/devices/firewall/apply",
+      "route": "/api/devices/firewall/apply",
+      "duration_seconds": 2.326409,
+      "cpu_percent": 0.0,
+      "cpu_system_percent": 38.9,
+      "ram_mb": 35.8515625,
+      "ram_percent": 0.11032139731461515,
+      "ram_system_percent": 64.7,
+      "ram_system_available_mb": 11457.421875,
+      "success": true,
+      "error": null,
+      "metadata": {
+        "status": "ok",
+        "message": "Mudan\u00e7as aplicadas com sucesso no firewall",
+        "result": {
+          "code": 200,
+          "status": "ok",
+          "response_id": "SUCCESS",
+          "message": "",
+          "data": {
+            "applied": true,
+            "pending_subsystems": []
+          }
+        }
+      }
+    }
+  ],
+  "summary": {
+    "total_operations": 6,
+    "successful_operations": 6,
+    "failed_operations": 0,
+    "total_time": 14.806318000000001,
+    "avg_cpu_percent": 0.0,
+    "max_cpu_percent": 0.0,
+    "avg_ram_mb": 35.809244791666664,
+    "max_ram_mb": 35.8515625
+  }
+}

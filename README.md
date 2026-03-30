@@ -2,7 +2,7 @@
 # Sistema de Registro IoT com Autenticação CAFe e pfSense
 
 ## Diagrama de Arquitetura
-![Diagrama de Arquitetura do Sistema](https://raw.githubusercontent.com/JonerMello/COVID19/refs/heads/master/APIIoTV1.png) 
+![Diagrama de Arquitetura do Sistema](https://github.com/GT-IoTEdu/API/blob/main/diagramas/images/Arquitetura_v1.png)
 
 *Diagrama completo dos componentes e fluxos do sistema*
 
@@ -13,297 +13,433 @@ Sistema integrado para gerenciamento seguro de dispositivos IoT em ambientes aca
 - 🤖 Monitoramento inteligente de tráfego com IA
 - 📊 Painel administrativo de dispositivos IoTs cadastrados
 
-## Componentes Principais
 
-### 1. Módulo de Autenticação
-- **Integração CAFe** (SAML 2.0/OAuth2)
-- Fluxo JWT interno após autenticação federada
-- Controle de permissões granular
+# 🚀 Guia Completo de Instalação
 
+  
 
-### 2. Serviço da API_IoT_EDU
-| Funcionalidade | Tecnologia | Detalhes |
-|---------------|------------|----------|
-| Autenticação CAFe | SAML/OAuth2 | Integração com federação acadêmica |
-| Validação de Dispositivos | Python + NetAddr | Checagem de IP/MAC e faixas autorizadas |
-| Gerenciamento pfSense | Python + Requests | Rotação automática de API Keys<br>Endpoints: `/api/v1/firewall/rule` |
-| Auditoria | Definir | Log de operações com:<br>- Usuário CAFe<br>- Timestamp<br>- Ações no firewall |
+Este guia detalha o processo completo de instalação do sistema do zero, incluindo banco de dados vazio e pfSense sem configurações.
 
-### 3. Endpoints Principais:
+  
 
-| Endpoint | Método | Descrição | Parâmetros |
-|----------|--------|-----------|------------|
-| `/auth/cafe` | GET | Inicia fluxo de autenticação | `redirect_uri` |
-| `/api/devices` | POST | Registra novo dispositivo IoT | ```json<br>{<br>  "ip": "string",<br>  "mac": "string",<br>  "description": "string"<br>}``` |
-| `/api/firewall/rules` | GET | Lista regras ativas | `?filter=iot` |
-| `/monitoring/alerts` | GET | Consulta anomalias | `?severity=high` |
+## 📋 Pré-requisitos
 
-## Fluxo de Operação
-1. Autenticação via CAFe (SAML/OAuth2)
-2. Validação de permissões no sistema
-3. Cadastro do dispositivo:
-   ```json
-   POST /api/devices
-   {
-     "ip": "192.168.10.50",
-     "mac": "00:1A:2B:3C:4D:5E",
-     "description": "Sensor Ambiental - Lab 5A"
-   }
-   ```
-   ### 3.1 Criação automática da regra no pfSense:
- ```json
-POST /api/v1/firewall/rule
-Headers: {
-  "Authorization": "Bearer {api_key}",
-  "X-CAFE-User": "user@university.edu.br"
-}
-Body: {
-  "interface": "IoT_VLAN",
-  "src": "192.168.10.50",
-  "descr": "IoT-EDU: Sensor Lab 5A",
-  "tracker": 123456789,
-  "top": true
-}
-  ```
+  
 
+- ✅ Python 3.9+ instalado
 
-----------
+- ✅ MySQL/MariaDB instalado e rodando
 
-## 🔐 **Endpoints do pfSense para Integração com Dispositivos IoT**
+- ✅ pfSense configurado com API REST v2 habilitada
 
-Estes endpoints foram selecionados para permitir:
+- ✅ Acesso ao banco de dados MySQL
 
--   ✅ Cadastro automático de regras para dispositivos IoT
-    
--   🔄 Atualização dinâmica de grupos (aliases)
-    
--   📡 Monitoramento de tráfego e status de rede
-    
--   🧾 Consulta de logs para análise inteligente
-    
+- ✅ Acesso ao pfSense (interface web e API)
 
-----------
+  
 
-### 1. **Autenticação**
+## 🔧 Passo 1: Preparar Ambiente
 
-> Gera token JWT para autenticar nas chamadas da API do pfSense
+  
 
-```
-POST /api/v1/access_token
+### 1.1. Criar Banco de Dados Vazio
+
+  
+
+```sql
+
+-- Conectar ao MySQL como root
+
+mysql -u root -p
+
+  
+
+-- Criar banco de dados
+
+CREATE  DATABASE  iot_edu  CHARACTER  SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+  
+
+-- Criar usuário
+
+CREATE  USER 'IoT_EDU'@'localhost' IDENTIFIED BY  'sua_senha_aqui';
+
+  
+
+-- Dar permissões
+
+GRANT ALL PRIVILEGES ON iot_edu.* TO  'IoT_EDU'@'localhost';
+
+FLUSH PRIVILEGES;
+
+  
+
+-- Verificar
+
+SHOW DATABASES;
+
+USE iot_edu;
+
+SHOW TABLES; -- Deve estar vazio
 
 ```
 
-**Parâmetros:**
+  
 
-Nome
+### 1.2. Configurar Variáveis de Ambiente
 
-Tipo
+  
 
-Descrição
+```bash
 
-client_id
+cd  backend
 
-string
-
-ID do cliente registrado
-
-client_secret
-
-string
-
-Segredo associado ao cliente
-
-username
-
-string
-
-Nome de usuário
-
-password
-
-string
-
-Senha
-
-----------
-
-### 2. **Gerenciamento de Regras de Firewall**
-
-> Permite controlar o acesso dos dispositivos IoT à rede
-
--   **Listar Regras**
-    
-
-```
-GET /api/v1/firewall/rule
+cp  env_example.txt  .env
 
 ```
 
--   **Criar Regra (ex: liberar IP IoT)**
-    
+  
 
-```
-POST /api/v1/firewall/rule
+Edite o arquivo `.env`:
 
-```
+  
 
-**Campos obrigatórios (exemplo IoT):**
+```env
 
-```json
-{
-  "interface": "IoT_VLAN",
-  "protocol": "any",
-  "src": "192.168.10.50",
-  "dst": "any",
-  "dstport": "any",
-  "descr": "IoT-EDU: Sensor Lab 5A",
-  "top": true
-}
+# Banco de Dados
 
-```
+MYSQL_USER=IoT_EDU
 
--   **Remover Regra**
-    
+MYSQL_PASSWORD=sua_senha_aqui
 
-```
-DELETE /api/v1/firewall/rule/{id}
+MYSQL_HOST=localhost
 
-```
+MYSQL_DB=iot_edu
 
-----------
+# Google OAuth (para login)
 
-### 3. **Aliases (Grupos de IPs IoT)**
+GOOGLE_CLIENT_ID=seu_client_id
 
-> Organiza dispositivos por grupos para facilitar regras e relatórios
+GOOGLE_CLIENT_SECRET=seu_client_secret
 
--   **Listar Aliases**
-    
+# Superusuário
 
-```
-GET /api/v1/firewall/alias
+SUPERUSER_ACCESS=seu_email@gmail.com
 
 ```
 
--   **Criar Alias**
-    
+  
 
-```
-POST /api/v1/firewall/alias
+### 1.3. Instalar Dependências
 
-```
+  
 
-**Campos:**
+```bash
 
-```json
-{
-  "name": "Dispositivos_IoT",
-  "type": "host",
-  "address": "192.168.10.50 192.168.10.51"
-}
+cd  backend
+
+pip  install  -r  requirements.txt
 
 ```
 
--   **Atualizar Alias**
-    
+  
 
-```
-PUT /api/v1/firewall/alias/{name}
+## 📊 Passo 2: Criar Estrutura do Banco de Dados
 
-```
+  
 
-----------
+```bash
 
-### 4. **Interfaces de Rede**
+# Script unificado que detecta automaticamente se é instalação do zero
 
-> Consulta e monitoramento das interfaces onde os dispositivos estão conectados
-
--   **Listar Interfaces**
-    
-
-```
-GET /api/v1/interface
+python  -m  db.setup_database
 
 ```
 
--   **Status das Interfaces**
-    
+  
 
-```
-GET /api/v1/interface/status
+**O que este script faz:**
 
-```
+- ✅ Detecta se o banco está vazio (instalação do zero)
 
-----------
+- ✅ Se for instalação do zero: cria todas as tabelas com estrutura completa (incluindo todos os campos e índices)
 
-### 5. **Leases DHCP (IP Dinâmico dos Dispositivos IoT)**
+- ✅ Se for atualização: executa apenas as migrações necessárias
 
-> Permite identificar ou fixar IPs de dispositivos registrados
+- ✅ Cria automaticamente todos os campos (`institution_id`, `permission`, `is_active`, etc.)
 
--   **Consultar Leases Ativos**
-    
+- ✅ Cria automaticamente todos os índices (incluindo índices únicos compostos)
 
-```
-GET /api/v1/dhcpd/lease
+  
 
-```
+**Verificar:**
 
--   **Reservar IP Estático para MAC**
-    
+```sql
 
-```
-POST /api/v1/dhcpd/lease
+USE iot_edu;
+
+SHOW TABLES;
 
 ```
 
-**Campos comuns:**
+  
 
-```json
-{
-  "mac": "00:1A:2B:3C:4D:5E",
-  "ip": "192.168.10.50",
-  "hostname": "sensor-lab5a"
-}
+Deve mostrar todas as tabelas criadas:
+
+- users
+
+- institutions
+
+- dhcp_servers
+
+- dhcp_static_mappings
+
+- pfsense_aliases
+
+- pfsense_alias_addresses
+
+- pfsense_firewall_rules
+
+- zeek_incidents
+
+- etc.
+
+  
+
+## 🛡️ Passo 3: Configurar pfSense
+
+  
+
+### 5.1. Habilitar API REST no pfSense
+
+  
+
+1. Acesse a interface web do pfSense
+
+2. Vá em **System > Package Manager**
+
+3. Instale o pacote **API** (pfsense-pkg-API)
+
+4. Vá em **System > API**
+
+5. Gere uma nova chave de API (SHA256 tamanho 36)
+
+6. Anote a **API Key**
+
+  
+  
+
+## 🚀 Passo 4: Criar Aliases e Regras Iniciais
+**Importante:** O script `setup_initial_aliases_and_rules.py` precisa ser executado **após** criar a instituição (PASSO 5), pois ele cria os aliases e regras para cada instituição cadastrada.
+  
+
+```bash
+
+# Para todas as instituições
+
+python  scripts/setup_initial_aliases_and_rules.py
+
+  
 
 ```
 
-----------
+  
 
-### 6. **Logs de Firewall**
+**O que este script faz:**
 
-> Análise de tráfego e detecção de anomalias por IA
+1. ✅ Cria alias "Autorizados" no pfSense e banco
+
+2. ✅ Cria alias "Bloqueados" no pfSense e banco
+
+3. ✅ Cria regra BLOCK para alias "Bloqueados"
+
+4. ✅ Cria regra PASS para alias "Autorizados"
+
+5. ✅ Sincroniza regras com o banco de dados
+
+  
+
+**Nota:** Este script requer que a instituição já esteja cadastrada no banco de dados. Se ainda não criou a instituição, veja o Passo 5.
+
+  
+
+## 👥 Passo 5: Criar Instituição e Administrador via Interface Web
+
+  
+
+Após executar os scripts acima, você precisa:
+
+  
+
+1.  **Iniciar o servidor backend:**
+
+```bash
+
+python start_server.py
 
 ```
-GET /api/v1/system/log/firewall
+
+  
+
+2.  **Acessar a interface web** e fazer login com o email configurado em `SUPERUSER_ACCESS` no arquivo `.env`
+
+  
+
+3.  **Criar Instituição:**
+
+- Acesse a seção de **Instituições** na interface web
+
+- Clique em **Nova Instituição**
+
+- Preencha os dados:
+
+- Nome (ex: "Unipampa")
+
+- Cidade (ex: "Alegrete")
+
+- URL do pfSense (ex: "https://seu-pfsense.local/api/v2/")
+
+- Chave API do pfSense
+
+- Range de IPs (ex: "192.168.1.1" a "192.168.1.254")
+
+- Salve a instituição
+
+  
+
+4.  **Criar Usuário Administrador:**
+
+- Acesse a seção de **Usuários** na interface web
+
+- Clique em **Novo Usuário** ou atribua permissão ADMIN a um usuário existente
+
+- Associe o usuário à instituição criada
+
+- Defina a permissão como **ADMIN**
+
+  
+
+**Importante:** O script `setup_initial_aliases_and_rules.py` precisa ser executado **após** criar a instituição, pois ele cria os aliases e regras para cada instituição cadastrada.
+
+  
+  
+
+## 📝 Checklist de Instalação
+
+  
+
+Use este checklist para garantir que tudo foi configurado:
+
+  
+
+- [ ] Banco de dados criado e vazio
+
+- [ ] Variáveis de ambiente configuradas (.env)
+
+- [ ] Dependências Python instaladas
+
+- [ ] Banco de dados configurado (`python -m db.setup_database`)
+
+- [ ] pfSense API configurada e testada
+
+- [ ] Servidor backend iniciado
+
+- [ ] Login realizado como SUPERUSER
+
+- [ ] Instituição criada via interface web
+
+- [ ] Usuário ADMIN criado/atribuído via interface web
+
+- [ ] Script de setup inicial executado (`python scripts/setup_initial_aliases_and_rules.py`)
+
+- [ ] Aliases verificados no banco
+
+- [ ] Aliases verificados no pfSense
+
+- [ ] Regras verificadas no banco
+
+- [ ] Regras verificadas no pfSense
+
+  
+
+## 🐛 Troubleshooting
+
+  
+
+### Erro: "Configurações do pfSense não encontradas"
+
+  
+
+**Solução:**
+
+1. Verificar se a instituição foi criada no banco
+
+2. Verificar se `pfsense_base_url` e `pfsense_key` estão corretos
+
+3. Verificar se o usuário tem `institution_id` associado
+
+  
+
+### Erro: "Timeout ao conectar no pfSense"
+
+  
+
+**Solução:**
+
+1. Verificar conectividade de rede
+
+2. Verificar URL do pfSense (deve terminar com `/api/v2/`)
+
+3. Verificar se API está habilitada no pfSense
+
+
+ 
+
+### Erro: "Usuário ADMIN não encontrado"
+
+  
+
+**Solução:**
+
+1. Criar usuário ADMIN via interface web:
+
+- Acesse a seção de Usuários
+
+- Atribua permissão ADMIN ao usuário
+
+  
+
+2. Ou criar manualmente via SQL:
+
+```sql
+
+UPDATE users SET permission = 'ADMIN', institution_id = 1  WHERE id = X;
 
 ```
 
-> Retorna os logs brutos do tráfego processado pelo firewall.
+  
 
-----------
+## 📚 Resumo da Instalação
 
-### 7. **Informações do Sistema**
+  
 
-> Detalhes úteis para diagnóstico da infraestrutura
+O processo de instalação foi simplificado para apenas **2 comandos principais**:
 
-```
-GET /api/v1/system/info
+  
 
-```
+1.  **Criar tabelas:**  `python -m db.setup_database`
 
-Retorna:
+2. **Instalar pfsense:** mais detalhes em [pfsense install]()
 
-```json
-{
-  "version": "2.7.0",
-  "hostname": "fw-campus",
-  "uptime": "3 days, 14:27",
-  ...
-}
+3.  **Criar aliases e regras:**  `python scripts/setup_initial_aliases_and_rules.py`
 
-```
+  
 
-----------
+**Após executar os comandos:**
+
+- Criar instituição via interface web (como SUPERUSER)
+
+- Criar/atribuir usuário ADMIN via interface web
 
 
-# Instalação
-# Execução
+ 

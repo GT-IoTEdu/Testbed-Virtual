@@ -1,4 +1,4 @@
- # Configurações do banco de dados MySQL
+# Configurações do banco de dados MySQL
 MYSQL_USER=IoT_EDU
 MYSQL_PASSWORD=sua_senha_mysql_aqui
 MYSQL_HOST=localhost
@@ -32,6 +32,13 @@ ZEEK_API_TOKEN=y1X6Qn8PpV9jR4kM0wBz7Tf2GhUs3Lc8NrDq5Ke1HxYi0AzF7Gv9MbX2VwJoQp
 IP_RANGE_START=192.168.100.1
 IP_RANGE_END=192.168.100.254
 IP_RANGE_EXCLUDED=192.168.100.1,192.168.100.100,192.168.100.200
+
+# Configurações de acesso administrativo
+# IMPORTANTE: O login administrativo é feito via Google OAuth.
+# Configure apenas o email do superusuário (Gmail) em SUPERUSER_ACCESS.
+# O sistema verificará automaticamente se o email autenticado via Google corresponde ao SUPERUSER_ACCESS.
+SUPERUSER_ACCESS=admin@iotedu.local
+# ADMIN_PASSWORD não é mais necessário - removido para usar apenas Google OAuth
 
 # Configurações de email (opcional)
 EMAIL_HOST=smtp.gmail.com

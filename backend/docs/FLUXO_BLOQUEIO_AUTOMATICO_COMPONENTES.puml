@@ -1,0 +1,127 @@
+@startuml Diagrama de Componentes - Sistema de Bloqueio Automático
+
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 11
+skinparam roundcorner 10
+skinparam shadowing true
+
+title Diagrama de Componentes - Sistema de Detecção e Bloqueio Automático
+
+package "Sistema de Detecção e Bloqueio Automático" {
+    
+    component [Zeek Monitor\nBackground Thread\nIntervalo: 3s] as Monitor #LightBlue
+    
+    component [ZeekService\n2.281s | CPU: 6.80%] as ZeekService #LightGreen {
+        interface "GET /api/scanners/zeek/logs" as ZeekEndpoint
+    }
+    
+    component [IncidentService\n2.499s + 3.222s | CPU: 13.70% + 16.10%] as IncidentService #LightYellow {
+        interface "POST /api/incidents/" as SaveEndpoint
+        interface "POST /api/incidents/process-batch" as ProcessEndpoint
+        interface "_apply_auto_block()" as BlockMethod
+    }
+    
+    component [AliasService\n2.245s + 2.233s | CPU: 16.70% + 25.00%] as AliasService #LightCoral {
+        interface "GET /api/devices/aliases-db/{name}" as GetAliasEndpoint
+        interface "POST /api/devices/aliases-db/{name}/add-addresses" as AddAddressEndpoint
+    }
+    
+    component [pfSense Client\n2.326s | CPU: 38.90%] as PfSenseClient #Orange {
+        interface "POST /api/devices/firewall/apply" as ApplyEndpoint
+    }
+    
+    database "MySQL Database" as Database #LightGray {
+        entity "zeek_incidents" as IncidentsTable
+        entity "pfsense_aliases" as AliasesTable
+        entity "pfsense_alias_addresses" as AddressesTable
+        entity "blocking_feedback_history" as FeedbackTable
+    }
+    
+    node "pfSense Firewall\n192.168.59.2" as PfSense #LightPink {
+        component "Zeek API\n/zeek-api/alert_data.php" as ZeekAPI
+        component "pfSense API v2\n/api/v2/firewall/" as PfSenseAPI
+        component "Firewall Engine" as FirewallEngine
+    }
+}
+
+' Fluxo de operação
+Monitor --> ZeekService : Busca logs
+ZeekService --> ZeekAPI : GET /zeek-api/alert_data.php
+ZeekAPI --> ZeekService : Retorna logs JSON
+ZeekService --> Monitor : Incidentes detectados
+
+Monitor --> IncidentService : Salva incidente
+IncidentService --> SaveEndpoint
+SaveEndpoint --> IncidentsTable : INSERT
+IncidentsTable --> SaveEndpoint : ID criado
+
+IncidentService --> ProcessEndpoint : Processa em lote
+ProcessEndpoint --> IncidentsTable : SELECT + UPDATE
+ProcessEndpoint --> BlockMethod : Para cada "Atacante"
+
+BlockMethod --> AliasService : get_alias_by_name()
+AliasService --> GetAliasEndpoint
+GetAliasEndpoint --> AliasesTable : SELECT
+GetAliasEndpoint --> PfSenseAPI : GET /api/v2/firewall/alias
+
+BlockMethod --> AliasService : add_addresses_to_alias()
+AliasService --> AddAddressEndpoint
+AddAddressEndpoint --> AddressesTable : INSERT
+AddAddressEndpoint --> PfSenseAPI : PUT /api/v2/firewall/alias/{id}
+
+BlockMethod --> PfSenseClient : aplicar_mudancas_firewall()
+PfSenseClient --> ApplyEndpoint
+ApplyEndpoint --> PfSenseAPI : POST /api/v2/firewall/apply
+PfSenseAPI --> FirewallEngine : Aplica mudanças
+FirewallEngine --> FirewallEngine : Encerra conexões
+
+IncidentService --> FeedbackTable : INSERT feedback
+
+note right of Monitor
+  <b>Monitoramento Contínuo</b>
+  Verifica logs a cada 3 segundos
+end note
+
+note right of ZeekService
+  <b>Tempo: 2.281s</b>
+  CPU: 6.80%
+  RAM: 35.79 MB
+end note
+
+note right of IncidentService
+  <b>Salvamento: 2.499s</b>
+  <b>Processamento: 3.222s</b>
+  Total: 5.721s
+end note
+
+note right of AliasService
+  <b>Busca: 2.245s</b>
+  <b>Adição: 2.233s</b>
+  Total: 4.478s
+end note
+
+note right of PfSenseClient
+  <b>Tempo: 2.326s</b>
+  CPU: 38.90%
+  <b>Maior carga!</b>
+end note
+
+note bottom of Database
+  <b>Operações de Banco:</b>
+  - INSERT incidentes
+  - UPDATE processed_at
+  - SELECT/INSERT aliases
+  - INSERT feedback
+end note
+
+note bottom of PfSense
+  <b>Operações no pfSense:</b>
+  - Busca logs Zeek
+  - Atualiza aliases
+  - Aplica mudanças firewall
+  - Encerra conexões
+end note
+
+@enduml
+

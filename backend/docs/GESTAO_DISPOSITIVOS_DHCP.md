@@ -39,7 +39,7 @@ POST /api/devices/dhcp/static_mapping
 1. ✅ Verifica automaticamente duplicatas (IP ou MAC já existente)
 2. ✅ Cadastra no **pfSense** via API v2
 3. ✅ Salva no **banco de dados local**
-4. ⚠️ **Mudanças ficam pendentes** - É necessário chamar `/dhcp/apply`
+4. ✅ **Aplica as mudanças automaticamente** no pfSense
 
 ### **Response**
 ```json
@@ -66,9 +66,7 @@ curl -X POST http://localhost:8000/api/devices/dhcp/static_mapping \
     "hostname": "device-hostname",
     "descr": "Dispositivo IoT"
   }'
-
-# Depois, aplicar as mudanças:
-curl -X POST http://localhost:8000/api/devices/dhcp/apply
+# As mudanças são aplicadas automaticamente! ✅
 ```
 
 ---
@@ -83,7 +81,7 @@ PATCH /api/devices/dhcp/static_mapping
 ### **Query Parameters**
 - `parent_id` (string, opcional): ID do servidor DHCP (padrão: "lan")
 - `mapping_id` (int, obrigatório): ID do mapeamento no pfSense
-- `apply` (bool, opcional): Aplica as mudanças imediatamente (padrão: false)
+- `apply` (bool, opcional): Aplica as mudanças imediatamente (padrão: **true**)
 
 ### **Request Body**
 ```json
@@ -99,13 +97,24 @@ PATCH /api/devices/dhcp/static_mapping
 ### **Processo**
 1. ✅ Atualiza no **pfSense**
 2. ✅ Atualiza no **banco de dados local**
-3. ⚙️ **Apply opcional** via parâmetro `apply=true`
+3. ✅ **Apply automático** por padrão (pode ser desabilitado com `apply=false`)
 
 ### **Exemplos**
 
-#### **Sem apply automático (padrão)**
+#### **Com apply automático (padrão)**
 ```bash
 curl -X PATCH "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=5" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "descr": "Nova descrição",
+    "cid": "Novo CID"
+  }'
+# As mudanças são aplicadas automaticamente!
+```
+
+#### **Sem apply automático (usar apply=false)**
+```bash
+curl -X PATCH "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=5&apply=false" \
   -H "Content-Type: application/json" \
   -d '{
     "descr": "Nova descrição",
@@ -114,16 +123,6 @@ curl -X PATCH "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=
 
 # Depois, aplicar manualmente:
 curl -X POST http://localhost:8000/api/devices/dhcp/apply
-```
-
-#### **Com apply automático**
-```bash
-curl -X PATCH "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=5&apply=true" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "descr": "Nova descrição",
-    "cid": "Novo CID"
-  }'
 ```
 
 ### **Response**
@@ -151,26 +150,27 @@ DELETE /api/devices/dhcp/static_mapping
 ### **Query Parameters**
 - `parent_id` (string, opcional): ID do servidor DHCP (padrão: "lan")
 - `mapping_id` (int, obrigatório): ID do mapeamento no pfSense
-- `apply` (bool, opcional): Aplica as mudanças imediatamente (padrão: false)
+- `apply` (bool, opcional): Aplica as mudanças imediatamente (padrão: **true**)
 
 ### **Processo**
 1. ✅ Exclui do **pfSense**
 2. ✅ Remove do **banco de dados local**
-3. ⚙️ **Apply opcional** via parâmetro `apply=true`
+3. ✅ **Apply automático** por padrão (pode ser desabilitado com `apply=false`)
 
 ### **Exemplos**
 
-#### **Sem apply automático (padrão)**
+#### **Com apply automático (padrão)**
 ```bash
 curl -X DELETE "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=5"
+# As mudanças são aplicadas automaticamente!
+```
+
+#### **Sem apply automático (usar apply=false)**
+```bash
+curl -X DELETE "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=5&apply=false"
 
 # Depois, aplicar manualmente:
 curl -X POST http://localhost:8000/api/devices/dhcp/apply
-```
-
-#### **Com apply automático**
-```bash
-curl -X DELETE "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=5&apply=true"
 ```
 
 ### **Response**
@@ -205,10 +205,9 @@ POST /api/v2/services/dhcp_server/apply
 ```
 
 ### **Quando usar?**
-- Após criar novos mapeamentos estáticos
-- Após atualizar mapeamentos (se não usar `apply=true`)
-- Após excluir mapeamentos (se não usar `apply=true`)
-- Para aplicar múltiplas mudanças de uma vez (batch operations)
+- **Raramente necessário** - todas as operações (CREATE, UPDATE, DELETE) aplicam automaticamente
+- Pode ser útil se houver algum problema e você precisar forçar a aplicação manual
+- Útil para verificar/aplicar mudanças pendentes feitas diretamente no pfSense
 
 ### **Exemplo**
 ```bash
@@ -244,42 +243,60 @@ curl -X POST http://localhost:8000/api/devices/dhcp/apply
 
 | Operação | Endpoint | Apply Automático? | Parâmetro Apply? | Requer Apply Manual? |
 |----------|----------|-------------------|------------------|----------------------|
-| **CREATE** | `POST /dhcp/static_mapping` | ❌ Não | ❌ Não disponível | ✅ Sim - chamar `/dhcp/apply` |
-| **UPDATE** | `PATCH /dhcp/static_mapping` | ❌ Não (padrão) | ✅ Sim (`apply=true`) | ⚙️ Opcional |
-| **DELETE** | `DELETE /dhcp/static_mapping` | ❌ Não (padrão) | ✅ Sim (`apply=true`) | ⚙️ Opcional |
-| **APPLY** | `POST /dhcp/apply` | ✅ Aplica tudo | N/A | N/A |
+| **CREATE** | `POST /dhcp/static_mapping` | ✅ **Sim (automático)** | ❌ Não disponível | ❌ Não |
+| **UPDATE** | `PATCH /dhcp/static_mapping` | ✅ **Sim (padrão)** | ✅ Sim (usar `apply=false` para desativar) | ❌ Não |
+| **DELETE** | `DELETE /dhcp/static_mapping` | ✅ **Sim (padrão)** | ✅ Sim (usar `apply=false` para desativar) | ❌ Não |
+| **APPLY** | `POST /dhcp/apply` | ✅ Aplica tudo | N/A | ❌ Não (só usar se necessário) |
 
 ---
 
 ## 💡 Boas Práticas
 
-### **1. Operações Individuais**
+### **1. Operações Individuais (Apply Automático)**
 ```bash
-# Criar dispositivo
+# Criar dispositivo (apply automático)
 curl -X POST .../dhcp/static_mapping -d '{...}'
+# Mudanças já aplicadas automaticamente! ✅
 
-# Aplicar imediatamente
-curl -X POST .../dhcp/apply
+# Atualizar dispositivo (apply automático)
+curl -X PATCH ".../dhcp/static_mapping?mapping_id=5" -d '{...}'
+# Mudanças já aplicadas automaticamente! ✅
+
+# Excluir dispositivo (apply automático)
+curl -X DELETE ".../dhcp/static_mapping?mapping_id=5"
+# Mudanças já aplicadas automaticamente! ✅
 ```
 
 ### **2. Operações em Lote (Batch)**
 ```bash
-# Criar múltiplos dispositivos
-curl -X POST .../dhcp/static_mapping -d '{device1}'
-curl -X POST .../dhcp/static_mapping -d '{device2}'
-curl -X POST .../dhcp/static_mapping -d '{device3}'
+# Criar múltiplos dispositivos (cada um aplica automaticamente)
+curl -X POST .../dhcp/static_mapping -d '{device1}'  # Apply automático
+curl -X POST .../dhcp/static_mapping -d '{device2}'  # Apply automático
+curl -X POST .../dhcp/static_mapping -d '{device3}'  # Apply automático
 
-# Aplicar todas as mudanças de uma vez
-curl -X POST .../dhcp/apply
+# Não é mais necessário chamar /dhcp/apply manualmente!
+# Mas ainda pode ser usado se preferir aplicar manualmente
 ```
 
-### **3. Edição/Exclusão com Apply Imediato**
+### **3. Edição/Exclusão com Apply Automático (Padrão)**
 ```bash
-# Atualizar e aplicar em uma única operação
-curl -X PATCH ".../dhcp/static_mapping?mapping_id=5&apply=true" -d '{...}'
+# Atualizar (apply automático por padrão)
+curl -X PATCH ".../dhcp/static_mapping?mapping_id=5" -d '{...}'
 
-# Excluir e aplicar em uma única operação
-curl -X DELETE ".../dhcp/static_mapping?mapping_id=5&apply=true"
+# Excluir (apply automático por padrão)
+curl -X DELETE ".../dhcp/static_mapping?mapping_id=5"
+```
+
+### **4. Edição/Exclusão SEM Apply Automático**
+```bash
+# Atualizar sem aplicar (usar apply=false)
+curl -X PATCH ".../dhcp/static_mapping?mapping_id=5&apply=false" -d '{...}'
+
+# Excluir sem aplicar (usar apply=false)
+curl -X DELETE ".../dhcp/static_mapping?mapping_id=5&apply=false"
+
+# Depois aplicar manualmente todas as mudanças
+curl -X POST .../dhcp/apply
 ```
 
 ---
@@ -326,10 +343,13 @@ class DhcpStaticMapping:
 ## 📝 Notas Importantes
 
 1. **Sincronização Dupla**: Todas as operações mantêm o pfSense e o banco local sincronizados
-2. **ID do pfSense**: O campo `pf_id` armazena o ID do mapeamento no pfSense para referência
-3. **Parent ID**: Por padrão é "lan", mas pode ser alterado para outras interfaces (wan, opt1, etc.)
-4. **Apply Assíncrono**: O apply pode levar alguns segundos, aguarde a resposta completa
-5. **Timeout**: O timeout para apply é de 30 segundos
+2. **Apply Automático**: **TODAS** as operações (CREATE, UPDATE, DELETE) aplicam as mudanças automaticamente
+3. **Apply em UPDATE/DELETE**: Use `apply=false` para desativar o apply automático se necessário
+4. **ID do pfSense**: O campo `pf_id` armazena o ID do mapeamento no pfSense para referência
+5. **Parent ID**: Por padrão é "lan", mas pode ser alterado para outras interfaces (wan, opt1, etc.)
+6. **Apply Assíncrono**: O apply pode levar alguns segundos, aguarde a resposta completa
+7. **Timeout**: O timeout para apply é de 30 segundos
+8. **Erro no Apply**: Se o apply falhar, a operação continua (cadastro/atualização/exclusão é feita), apenas o apply é logado como erro
 
 ---
 
@@ -356,18 +376,17 @@ curl -X POST http://localhost:8000/api/devices/dhcp/static_mapping \
     "descr": "Sensor de temperatura - Sala 1"
   }'
 
-# 2. Aplicar mudanças DHCP
-curl -X POST http://localhost:8000/api/devices/dhcp/apply
+# 2. Mudanças já aplicadas automaticamente no passo 1! ✅
 
-# 3. Atualizar descrição (com apply automático)
-curl -X PATCH "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=10&apply=true" \
+# 3. Atualizar descrição (apply automático por padrão)
+curl -X PATCH "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=10" \
   -H "Content-Type: application/json" \
   -d '{
     "descr": "Sensor de temperatura - Sala 2 (relocado)"
   }'
 
-# 4. Excluir dispositivo (com apply automático)
-curl -X DELETE "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=10&apply=true"
+# 4. Excluir dispositivo (apply automático por padrão)
+curl -X DELETE "http://localhost:8000/api/devices/dhcp/static_mapping?mapping_id=10"
 ```
 
 ---

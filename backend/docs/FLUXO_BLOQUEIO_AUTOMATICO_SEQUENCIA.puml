@@ -1,0 +1,203 @@
+@startuml Sequência Detalhada - Bloqueio Automático
+
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 10
+skinparam roundcorner 10
+skinparam shadowing false
+
+title Sequência Detalhada - Sistema de Detecção e Bloqueio Automático
+
+actor "Zeek Monitor\n(Background)" as Monitor #LightBlue
+participant "ZeekService" as Zeek #LightGreen
+participant "IncidentService" as Incident #LightYellow
+participant "AliasService" as Alias #LightCoral
+participant "pfSense API" as PfAPI #Orange
+participant "MySQL DB" as DB #LightGray
+participant "pfSense\nFirewall" as Firewall #LightPink
+
+== [1] Monitoramento e Detecção ==
+
+Monitor -> Zeek: GET /api/scanners/zeek/logs\nlogfile=notice.log
+activate Zeek
+
+Zeek -> PfAPI: GET /zeek-api/alert_data.php
+activate PfAPI
+PfAPI --> Zeek: JSON com logs
+deactivate PfAPI
+
+Zeek -> Zeek: Analisa logs\nDetecta SQL Injection
+Zeek -> Zeek: Cria ZeekIncident
+
+note right of Zeek
+  <b>⏱️ 2.281s</b>
+  💻 CPU: 6.80%
+  🧠 RAM: 35.79 MB
+end note
+
+Zeek --> Monitor: Incidentes detectados
+deactivate Zeek
+
+== [2] Salvamento do Incidente ==
+
+Monitor -> Incident: POST /api/incidents/\n{device_ip, incident_type, ...}
+activate Incident
+
+Incident -> DB: INSERT INTO zeek_incidents
+activate DB
+DB --> Incident: ID criado
+deactivate DB
+
+Incident -> Incident: Verifica "Atacante" no tipo
+Incident -> Incident: Thread Background.start()
+
+note right of Incident
+  <b>⏱️ 2.499s</b>
+  💻 CPU: 13.70%
+  🧠 RAM: 35.79 MB
+end note
+
+Incident --> Monitor: Incidente salvo (ID)
+deactivate Incident
+
+== [3] Processamento em Background ==
+
+Monitor -> Monitor: Thread aguarda 0.5s
+
+Monitor -> Incident: POST /api/incidents/process-batch\n?limit=10
+activate Incident
+
+Incident -> DB: SELECT * FROM zeek_incidents\nWHERE processed_at IS NULL
+activate DB
+DB --> Incident: Lista de incidentes
+deactivate DB
+
+loop Para cada incidente "Atacante"
+    Incident -> DB: UPDATE zeek_incidents\nSET processed_at = NOW()
+    activate DB
+    DB --> Incident: OK
+    deactivate DB
+    
+    Incident -> Incident: _apply_auto_block(incident)
+    activate Incident
+end
+
+note right of Incident
+  <b>⏱️ 3.222s</b>
+  💻 CPU: 16.10%
+  🧠 RAM: 35.79 MB
+end note
+
+Incident --> Monitor: Processamento concluído
+deactivate Incident
+
+== [4] Verificação de Alias ==
+
+Incident -> Alias: get_alias_by_name("Bloqueados")
+activate Alias
+
+Alias -> DB: SELECT * FROM pfsense_aliases\nWHERE name = 'Bloqueados'
+activate DB
+DB --> Alias: Dados do alias
+deactivate DB
+
+Alias -> PfAPI: GET /api/v2/firewall/alias\n(Verifica no pfSense)
+activate PfAPI
+PfAPI --> Alias: Dados do pfSense
+deactivate PfAPI
+
+note right of Alias
+  <b>⏱️ 2.245s</b>
+  💻 CPU: 16.70%
+  🧠 RAM: 35.79 MB
+end note
+
+Alias --> Incident: Alias encontrado
+deactivate Alias
+
+== [5] Adição de IP ao Alias ==
+
+Incident -> Alias: add_addresses_to_alias\n("Bloqueados", [{address: IP}])
+activate Alias
+
+Alias -> DB: INSERT INTO pfsense_alias_addresses\n(alias_id, address, detail)
+activate DB
+DB --> Alias: Endereço inserido
+deactivate DB
+
+Alias -> PfAPI: PUT /api/v2/firewall/alias/{id}\n{address: [...IPs...]}
+activate PfAPI
+PfAPI -> PfAPI: Atualiza configuração
+PfAPI --> Alias: Alias atualizado
+deactivate PfAPI
+
+note right of Alias
+  <b>⏱️ 2.233s</b>
+  💻 CPU: 25.00%
+  🧠 RAM: 35.85 MB
+end note
+
+Alias --> Incident: IP adicionado
+deactivate Alias
+
+== [6] Aplicação no Firewall ==
+
+Incident -> PfAPI: POST /api/v2/firewall/apply
+activate PfAPI
+
+PfAPI -> Firewall: Valida configurações
+activate Firewall
+Firewall -> Firewall: Reconstrói tabelas
+Firewall -> Firewall: Aplica regras
+Firewall -> Firewall: Encerra conexões do IP
+Firewall --> PfAPI: Mudanças aplicadas
+deactivate Firewall
+
+note right of PfAPI
+  <b>⏱️ 2.326s</b>
+  💻 CPU: 38.90%
+  🧠 RAM: 35.85 MB
+  <b>🔥 Maior carga!</b>
+end note
+
+PfAPI --> Incident: Aplicado com sucesso
+deactivate PfAPI
+
+== [7] Finalização ==
+
+Incident -> DB: UPDATE zeek_incidents\nSET status = 'resolved'
+activate DB
+DB --> Incident: Status atualizado
+deactivate DB
+
+Incident -> DB: INSERT INTO blocking_feedback_history\n(admin_reason, ...)
+activate DB
+DB --> Incident: Feedback criado
+deactivate DB
+
+Incident --> Monitor: ✅ Bloqueio completo
+
+note over Monitor, Firewall
+  <b>📊 RESUMO</b>
+  
+  <b>⏱️ Tempo Total: ~14.8 segundos</b>
+  
+  <b>Distribuição:</b>
+  1. get_logs: 2.281s (15.4%)
+  2. save_incident: 2.499s (16.9%)
+  3. process_incidents: 3.222s (21.8%) ← Mais lento
+  4. get_alias: 2.245s (15.2%)
+  5. add_addresses: 2.233s (15.1%)
+  6. apply_firewall: 2.326s (15.7%)
+  
+  <b>💻 CPU:</b>
+  - Média: ~19.7%
+  - Máximo: 38.90% (apply_firewall)
+  
+  <b>🧠 RAM:</b>
+  - Estável: 35.79-35.85 MB
+  - Sem vazamento
+end note
+
+@enduml
+

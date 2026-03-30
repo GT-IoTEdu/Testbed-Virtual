@@ -184,13 +184,14 @@ class PermissionService:
         
         return user_assignments is not None
     
-    def get_user_devices_with_permission(self, user_id: int, target_user_id: int) -> List[DhcpStaticMapping]:
+    def get_user_devices_with_permission(self, user_id: int, target_user_id: int, institution_id: Optional[int] = None) -> List[DhcpStaticMapping]:
         """
         Retorna dispositivos de um usuário considerando permissões.
         
         Args:
             user_id: ID do usuário que está fazendo a consulta
             target_user_id: ID do usuário cujos dispositivos serão retornados
+            institution_id: Se fornecido, filtra apenas dispositivos desta instituição
             
         Returns:
             Lista de dispositivos
@@ -203,10 +204,16 @@ class PermissionService:
             )
         
         # Buscar dispositivos
-        devices = self.db.query(DhcpStaticMapping).join(UserDeviceAssignment).filter(
+        query = self.db.query(DhcpStaticMapping).join(UserDeviceAssignment).filter(
             UserDeviceAssignment.user_id == target_user_id,
             UserDeviceAssignment.is_active == True
-        ).all()
+        )
+        
+        # Aplicar filtro por instituição se fornecido
+        if institution_id is not None:
+            query = query.filter(DhcpStaticMapping.institution_id == institution_id)
+        
+        devices = query.all()
         
         return devices
     
@@ -261,3 +268,74 @@ class PermissionService:
         """
         user = self.verify_user_exists(user_id)
         return user.is_manager()
+    
+    def is_admin(self, user_id: int) -> bool:
+        """
+        Verifica se um usuário é administrador.
+        
+        Args:
+            user_id: ID do usuário
+            
+        Returns:
+            True se é administrador, False caso contrário
+        """
+        user = self.verify_user_exists(user_id)
+        return user.is_admin()
+    
+    def is_manager_or_admin(self, user_id: int) -> bool:
+        """
+        Verifica se o usuário é gestor ou administrador.
+        
+        Args:
+            user_id: ID do usuário
+            
+        Returns:
+            True se for gestor ou administrador, False caso contrário
+        """
+        user = self.verify_user_exists(user_id)
+        return user.is_admin_or_manager()
+    
+    def can_manage_user_permissions(self, user_id: int) -> bool:
+        """
+        Verifica se o usuário pode gerenciar permissões de outros usuários.
+        
+        Args:
+            user_id: ID do usuário
+            
+        Returns:
+            True se pode gerenciar permissões, False caso contrário
+        """
+        user = self.verify_user_exists(user_id)
+        return user.can_manage_user_permissions()
+    
+    def can_promote_user(self, admin_user_id: int, target_user_id: int) -> bool:
+        """
+        Verifica se o administrador pode promover outro usuário.
+        
+        Args:
+            admin_user_id: ID do usuário administrador
+            target_user_id: ID do usuário que será promovido
+            
+        Returns:
+            True se pode promover, False caso contrário
+        """
+        admin_user = self.verify_user_exists(admin_user_id)
+        target_user = self.verify_user_exists(target_user_id)
+        
+        return admin_user.can_promote_user(target_user)
+    
+    def can_demote_user(self, admin_user_id: int, target_user_id: int) -> bool:
+        """
+        Verifica se o administrador pode rebaixar outro usuário.
+        
+        Args:
+            admin_user_id: ID do usuário administrador
+            target_user_id: ID do usuário que será rebaixado
+            
+        Returns:
+            True se pode rebaixar, False caso contrário
+        """
+        admin_user = self.verify_user_exists(admin_user_id)
+        target_user = self.verify_user_exists(target_user_id)
+        
+        return admin_user.can_demote_user(target_user)

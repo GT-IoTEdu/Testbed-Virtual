@@ -26,13 +26,28 @@ import { useRouter } from "next/navigation";
 import BlockingFeedbackModal from "../../components/BlockingFeedbackModal";
 import BlockingHistory from "../../components/BlockingHistory";
 import FeedbackHistory from "../../components/FeedbackHistory";
+import InstitutionSelector from "../../components/InstitutionSelector";
+import InstitutionEditForm from "../../components/InstitutionEditForm";
 
 export default function DashboardPage() {
   const [name, setName] = useState<string | null>(null);
   const [email, setEmail] = useState<string | null>(null);
   const [picture, setPicture] = useState<string | null>(null);
-  const [permission, setPermission] = useState<"USER" | "MANAGER">("USER");
+  const [permission, setPermission] = useState<"USER" | "ADMIN" | "SUPERUSER" | "MANAGER">("USER");
   const [userId, setUserId] = useState<number | null>(null);
+  const [institutionName, setInstitutionName] = useState<string | null>(null);
+  const [institutionCity, setInstitutionCity] = useState<string | null>(null);
+  const [institutionId, setInstitutionId] = useState<number | null>(null);
+  // Estados para Minha Rede
+  const [myInstitution, setMyInstitution] = useState<any | null>(null);
+  const [loadingInstitution, setLoadingInstitution] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [pfsenseStatus, setPfsenseStatus] = useState<"online" | "offline" | "checking" | null>(null);
+  const [zeekStatus, setZeekStatus] = useState<"online" | "offline" | "checking" | null>(null);
+  const [suricataStatus, setSuricataStatus] = useState<"online" | "offline" | "checking" | null>(null);
+  const [snortStatus, setSnortStatus] = useState<"online" | "offline" | "checking" | null>(null);
+  const [showInstitutionSelector, setShowInstitutionSelector] = useState(false);
+  const [userDataLoaded, setUserDataLoaded] = useState(false);
   const [devices, setDevices] = useState<Array<{ id: number; pf_id?: number; nome?: string; ipaddr?: string; mac?: string; cid?: string; descr?: string; statusAcesso?: string; ultimaAtividade?: string }>>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
   const [devicesError, setDevicesError] = useState<string | null>(null);
@@ -96,11 +111,69 @@ export default function DashboardPage() {
   }>>([]);
   const [noticeLoading, setNoticeLoading] = useState(false);
   const [noticeError, setNoticeError] = useState<string | null>(null);
+  const [noticePage, setNoticePage] = useState(0);
+  const [noticeTotal, setNoticeTotal] = useState(0);
   const [incidentSearch, setIncidentSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [logTypeFilter, setLogTypeFilter] = useState<string>("");
 
+  // Estados para Suricata
+  const [suricataAlerts, setSuricataAlerts] = useState<Array<any>>([]);
+  const [suricataLoading, setSuricataLoading] = useState(false);
+  const [suricataError, setSuricataError] = useState<string | null>(null);
+  const [suricataSeverityFilter, setSuricataSeverityFilter] = useState<string>("all");
+  const [suricataPage, setSuricataPage] = useState(0);
+  const [suricataTotal, setSuricataTotal] = useState(0);
+  // Estados para Snort
+  const [snortAlerts, setSnortAlerts] = useState<Array<any>>([]);
+  const [snortLoading, setSnortLoading] = useState(false);
+  const [snortError, setSnortError] = useState<string | null>(null);
+  const [snortSeverityFilter, setSnortSeverityFilter] = useState<string>("all");
+  const [snortPage, setSnortPage] = useState(0);
+  const [snortTotal, setSnortTotal] = useState(0);
+  // Estados para Zeek (mesmo padrão Suricata/Snort: alertas do banco + filtro + paginação)
+  const [zeekAlerts, setZeekAlerts] = useState<Array<any>>([]);
+  const [zeekLoading, setZeekLoading] = useState(false);
+  const [zeekError, setZeekError] = useState<string | null>(null);
+  const [zeekSeverityFilter, setZeekSeverityFilter] = useState<string>("all");
+  const [zeekPage, setZeekPage] = useState(0);
+  const [zeekTotal, setZeekTotal] = useState(0);
+  const [incidentView, setIncidentView] = useState<"zeek" | "suricata" | "snort">("zeek");
+
+  const INCIDENTS_PAGE_SIZE = 10;
+
+  /** Gera uma descrição curta e amigável da assinatura para usuário leigo. Detalhes completos ficam no tooltip. */
+  const getFriendlySignatureLabel = (signature: string, category?: string): string => {
+    const sig = (signature || "").trim();
+    const cat = (category || "").trim();
+    if (!sig && !cat) return "Alerta de segurança";
+    // Padrões conhecidos -> rótulo curto em português
+    if (/\b(DDoS|DDOS|DoS)\b/i.test(sig + cat) && /attack|detected|detectado|single source/i.test(sig + cat)) {
+      if (/single source/i.test(sig)) return "Ataque DoS de uma única origem";
+      return "Ataque DDoS/DoS detectado";
+    }
+    if (/SQL\s*injection|SQLi|injection/i.test(sig + cat)) return "Possível injeção SQL";
+    if (/scan|port.?scan|probe/i.test(sig + cat)) return "Varredura de portas detectada";
+    if (/malware|trojan|virus|ransomware/i.test(sig + cat)) return "Atividade maliciosa detectada";
+    if (/brute.?force|força.?bruta|login/i.test(sig + cat)) return "Tentativa de acesso em massa";
+    // Categoria: DDoS::DoS_Attack_Detected -> "Ataque DoS"
+    const catPart = cat.split("::").pop() || "";
+    if (catPart && catPart.length <= 35) {
+      const human = catPart.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase());
+      if (human.length <= 40) return human;
+    }
+    // Pegar primeiro trecho antes de | e limpar termos técnicos
+    const first = sig.split("|")[0].trim();
+    let cleaned = first
+      .replace(/\s*\[(HIGH|LOW|MEDIUM|CRITICAL|INFO)\]\s*/gi, "")
+      .replace(/\s*\[DDOS?\]\s*/gi, "")
+      .replace(/Target:\s*\[PRIVATE\]\s*[\d.:]+\s*/gi, "")
+      .replace(/^\[?\d+:\d+:\d+\]\s*/, "")
+      .trim();
+    if (cleaned.length > 50) cleaned = cleaned.slice(0, 47) + "...";
+    return cleaned || (cat ? cat.split("::").pop()?.replace(/_/g, " ") || "Alerta" : "Alerta de segurança");
+  };
 
   // Função para mapear severidade do notice para incident severity
   const mapNoticeSeverityToIncidentSeverity = (severity: string): string => {
@@ -281,8 +354,14 @@ export default function DashboardPage() {
   const fetchDeviceStatus = useCallback(async () => {
     setStatusLoading(true);
     try {
+      if (!userId) {
+        console.warn("User ID não disponível para buscar status dos dispositivos");
+        setStatusLoading(false);
+        return;
+      }
+      
       const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
-      const response = await fetch(`${base}/api/devices/dhcp/status`);
+      const response = await fetch(`${base}/api/devices/dhcp/status?current_user_id=${userId}`);
       
       if (!response.ok) {
         // Tenta obter mensagem de erro mais detalhada
@@ -298,29 +377,92 @@ export default function DashboardPage() {
       
       // Criar um mapa de IP -> status para lookup rápido
       const statusMap: Record<string, any> = {};
-      if (data.devices) {
+      if (data.devices && Array.isArray(data.devices)) {
         data.devices.forEach((device: any) => {
-          if (device.ip) {
-            statusMap[device.ip] = {
+          const ip = device.ip?.trim();
+          const mac = device.mac?.trim();
+          
+          if (ip) {
+            statusMap[ip] = {
               online_status: device.online_status,
               active_status: device.active_status,
               hostname: device.hostname
             };
           }
           // Também mapear por MAC para casos onde não temos IP
-          if (device.mac) {
-            statusMap[device.mac] = {
+          if (mac) {
+            // Normalizar MAC para comparação (minúsculas)
+            const normalizedMac = mac.toLowerCase();
+            statusMap[normalizedMac] = {
               online_status: device.online_status,
               active_status: device.active_status,
               hostname: device.hostname
             };
+            // Também mapear MAC original se diferente
+            if (mac !== normalizedMac) {
+              statusMap[mac] = statusMap[normalizedMac];
+            }
           }
         });
       }
       
+      // Se não encontrou nenhum dispositivo no status, criar fallback com dispositivos conhecidos
+      if (Object.keys(statusMap).length === 0) {
+        console.warn('⚠️ Nenhum dispositivo encontrado no status do pfSense - criando fallback');
+        const currentDevices = devices;
+        const currentAllDevices = allDevices;
+        
+        // Adicionar dispositivos conhecidos ao statusMap como offline
+        currentDevices.forEach(device => {
+          const ip = device.ipaddr?.trim();
+          const mac = device.mac?.trim()?.toLowerCase();
+          
+          if (ip && ip !== '-') {
+            statusMap[ip] = {
+              online_status: 'idle/offline',
+              active_status: 'static',
+              hostname: device.nome
+            };
+          }
+          if (mac && mac !== '-') {
+            statusMap[mac] = {
+              online_status: 'idle/offline',
+              active_status: 'static',
+              hostname: device.nome
+            };
+          }
+        });
+        
+        if (currentAllDevices && Array.isArray(currentAllDevices)) {
+          currentAllDevices.forEach(device => {
+            const ip = device.ipaddr?.trim();
+            const mac = device.mac?.trim()?.toLowerCase();
+            
+            if (ip && ip !== '-' && !statusMap[ip]) {
+              statusMap[ip] = {
+                online_status: 'idle/offline',
+                active_status: 'static',
+                hostname: device.nome
+              };
+            }
+            if (mac && mac !== '-' && !statusMap[mac]) {
+              statusMap[mac] = {
+                online_status: 'idle/offline',
+                active_status: 'static',
+                hostname: device.nome
+              };
+            }
+          });
+        }
+        
+        setStatusSource('fallback');
+      } else {
+        setStatusSource('live');
+      }
+      
       setDeviceStatus(statusMap);
-      setStatusSource('live');
-      console.log('📊 Status dos dispositivos carregado (live):', statusMap);
+      console.log('📊 Status dos dispositivos carregado:', statusMap);
+      console.log('📊 Total de dispositivos com status:', Object.keys(statusMap).length);
       
     } catch (error: any) {
       // Se for erro de conectividade com pfSense, usar status padrão silenciosamente
@@ -328,19 +470,23 @@ export default function DashboardPage() {
           error.message?.includes('pfSense') || error.message?.includes('Service Unavailable')) {
         console.warn('⚠️ pfSense indisponível - usando status baseado no statusAcesso');
         
+        // Usar os dispositivos atuais do estado
+        const currentDevices = devices;
+        const currentAllDevices = allDevices;
+        
         // Definir status padrão baseado no statusAcesso dos dispositivos conhecidos
         const defaultStatusMap: Record<string, any> = {};
         
         // Para dispositivos do usuário
-        devices.forEach(device => {
-          if (device.ipaddr) {
+        currentDevices.forEach(device => {
+          if (device.ipaddr && device.ipaddr !== '-') {
             defaultStatusMap[device.ipaddr] = {
               online_status: device.statusAcesso === 'LIBERADO' ? 'idle/offline' : 'idle/offline',
               active_status: 'static',
               hostname: device.nome
             };
           }
-          if (device.mac) {
+          if (device.mac && device.mac !== '-') {
             defaultStatusMap[device.mac] = {
               online_status: device.statusAcesso === 'LIBERADO' ? 'idle/offline' : 'idle/offline',
               active_status: 'static',
@@ -350,16 +496,16 @@ export default function DashboardPage() {
         });
         
         // Para dispositivos do gestor (se disponível)
-        if (typeof allDevices !== 'undefined') {
-          allDevices.forEach(device => {
-            if (device.ipaddr) {
+        if (currentAllDevices && Array.isArray(currentAllDevices)) {
+          currentAllDevices.forEach(device => {
+            if (device.ipaddr && device.ipaddr !== '-') {
               defaultStatusMap[device.ipaddr] = {
                 online_status: device.statusAcesso === 'LIBERADO' ? 'idle/offline' : 'idle/offline',
                 active_status: 'static',
                 hostname: device.nome
               };
             }
-            if (device.mac) {
+            if (device.mac && device.mac !== '-') {
               defaultStatusMap[device.mac] = {
                 online_status: device.statusAcesso === 'LIBERADO' ? 'idle/offline' : 'idle/offline',
                 active_status: 'static',
@@ -381,7 +527,7 @@ export default function DashboardPage() {
     } finally {
       setStatusLoading(false);
     }
-  }, []);
+  }, [userId, devices, allDevices]);
 
   // Função para buscar IPs de dispositivos cadastrados
   const fetchDeviceIps = useCallback(async () => {
@@ -488,19 +634,16 @@ export default function DashboardPage() {
     setFeedbackModalOpen(true);
   };
 
-  // Função para buscar logs notice (incidentes) do Zeek
-  const fetchIncidentsFromDatabase = useCallback(async () => {
+  // Função para buscar logs notice (incidentes) do Zeek no banco (zeek_incidents) — paginado 10 por página
+  const fetchIncidentsFromDatabase = useCallback(async (page = 0) => {
     setNoticeLoading(true);
     setNoticeError(null);
     try {
-      const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
-      console.log('🌐 Base URL configurada para incidentes do banco:', base);
-      
-      // Busca incidentes do banco de dados MySQL
-      let url = `${base}/api/incidents/`;
-      
-      console.log('🔍 Buscando incidentes do banco de dados:', url);
-      
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? "";
+      const limit = INCIDENTS_PAGE_SIZE;
+      const offset = page * limit;
+      const url = base ? `${base}/api/incidents/?limit=${limit}&offset=${offset}` : `/api/incidents/?limit=${limit}&offset=${offset}`;
+
       const response = await fetch(url, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
@@ -508,16 +651,15 @@ export default function DashboardPage() {
         }
       });
 
-      console.log('📡 Response status:', response.status);
-      console.log('📡 Response ok:', response.ok);
-
       if (response.ok) {
         const data = await response.json();
-        console.log('📊 Dados dos incidentes do banco:', data);
-        
-        if (Array.isArray(data) && data.length > 0) {
-          // Converte os dados do banco para o formato esperado pelo frontend
-          const incidentsData = data.map((incident: any) => {
+        const list = data?.items ?? (Array.isArray(data) ? data : data?.incidents ?? []);
+        const total = typeof data?.total === "number" ? data.total : list.length;
+
+        setNoticeTotal(total);
+        if (list.length > 0 || total > 0) {
+          // Converte os dados do banco (zeek_incidents) para o formato esperado pela view
+          const incidentsData = list.map((incident: any) => {
             // Função para formatar timestamp
             const formatTimestamp = (timestamp: string | Date) => {
               if (!timestamp) return '-';
@@ -594,50 +736,133 @@ export default function DashboardPage() {
             };
           });
           
-          console.log('✅ Incidentes processados do banco:', incidentsData);
           setNoticeIncidents(incidentsData);
+          setNoticeError(null);
         } else {
-          console.log('ℹ️ Nenhum incidente encontrado no banco de dados, tentando buscar diretamente do Zeek...');
-          
-          // Fallback: buscar dados diretamente do Zeek
-          try {
-            await fetchZeekNoticeIncidents();
-          } catch (fallbackError) {
-            console.error('❌ Erro no fallback do Zeek:', fallbackError);
           setNoticeIncidents([]);
-          }
+          setNoticeError(total === 0 ? 'Nenhum incidente encontrado no banco de dados.' : null);
         }
       } else {
-        console.error('❌ Erro na resposta da API de incidentes:', response.status, response.statusText);
-        const errorData = await response.text();
-        console.error('📄 Conteúdo do erro:', errorData);
-        
-        // Fallback: tentar buscar dados diretamente do Zeek
-        console.log('🔄 Tentando fallback para dados diretos do Zeek...');
+        const errorText = await response.text();
+        let errorMessage = `Erro ${response.status}: ${response.statusText}`;
         try {
-          await fetchZeekNoticeIncidents();
-        } catch (fallbackError) {
-          console.error('❌ Erro no fallback do Zeek:', fallbackError);
-        setNoticeError(`Erro ${response.status}: ${response.statusText}`);
-        setNoticeIncidents([]);
+          const errorJson = JSON.parse(errorText);
+          errorMessage = errorJson.detail || errorJson.message || errorMessage;
+        } catch {
+          // não é JSON
         }
+        setNoticeError(errorMessage);
+        setNoticeIncidents([]);
       }
     } catch (error: any) {
-      console.error('❌ Erro ao buscar incidentes do banco:', error);
-      
-      // Fallback: tentar buscar dados diretamente do Zeek
-      console.log('🔄 Tentando fallback para dados diretos do Zeek...');
-      try {
-        await fetchZeekNoticeIncidents();
-      } catch (fallbackError) {
-        console.error('❌ Erro no fallback do Zeek:', fallbackError);
-      setNoticeError(`Erro de conexão: ${error.message}`);
+      setNoticeError(error instanceof Error ? error.message : 'Erro ao buscar incidentes');
       setNoticeIncidents([]);
-      }
     } finally {
       setNoticeLoading(false);
     }
   }, []);
+
+  // Carregar alertas Suricata do banco (interface usa só dados do banco; SSE só dispara refetch)
+  const fetchSuricataAlertsFromDb = useCallback(async (silent = false, page = 0) => {
+    if (userId == null && institutionId == null) {
+      if (!silent) setSuricataError("É necessário estar logado (user/instituição) para carregar os alertas.");
+      return;
+    }
+    if (!silent) {
+      setSuricataLoading(true);
+      setSuricataError(null);
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? "";
+      const qs = userId != null ? `user_id=${userId}` : `institution_id=${institutionId}`;
+      const limit = INCIDENTS_PAGE_SIZE;
+      const offset = page * limit;
+      const url = base ? `${base}/api/scanners/suricata/alerts?${qs}&limit=${limit}&offset=${offset}` : `/api/scanners/suricata/alerts?${qs}&limit=${limit}&offset=${offset}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.message || `Erro ${res.status}`);
+      }
+      const data = await res.json();
+      const rawList = data?.items ?? (Array.isArray(data) ? data : data?.data ?? []);
+      const total = typeof data?.total === "number" ? data.total : rawList.length;
+      setSuricataTotal(total);
+      const normalized = rawList.map((a: any) => ({
+        id: a.id,
+        timestamp: a.timestamp ?? a.detected_at ?? null,
+        signature: a.signature ?? a.message ?? "",
+        signature_id: a.signature_id ?? null,
+        severity: a.severity != null ? String(a.severity).toLowerCase() : "medium",
+        src_ip: a.src_ip ?? null,
+        dest_ip: a.dest_ip ?? null,
+        src_port: a.src_port ?? null,
+        dest_port: a.dest_port ?? null,
+        protocol: a.protocol ?? null,
+        category: a.category ?? null,
+      }));
+      setSuricataAlerts(normalized);
+      setSuricataError(null);
+      if (process.env.NODE_ENV === "development" && normalized.length > 0) {
+        console.log("✅ [Suricata] Alertas carregados do banco:", normalized.length);
+      }
+    } catch (e: any) {
+      if (!silent) setSuricataError(e?.message || "Erro ao carregar alertas do Suricata");
+      setSuricataAlerts([]);
+    } finally {
+      if (!silent) setSuricataLoading(false);
+    }
+  }, [userId, institutionId]);
+
+  // Carregar alertas Snort do banco (paginado 10 por página)
+  const fetchSnortAlertsFromDb = useCallback(async (silent = false, page = 0) => {
+    if (userId == null && institutionId == null) {
+      if (!silent) setSnortError("É necessário estar logado (user/instituição) para carregar os alertas.");
+      return;
+    }
+    if (!silent) {
+      setSnortLoading(true);
+      setSnortError(null);
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? "";
+      const qs = userId != null ? `user_id=${userId}` : `institution_id=${institutionId}`;
+      const limit = INCIDENTS_PAGE_SIZE;
+      const offset = page * limit;
+      const url = base ? `${base}/api/scanners/snort/alerts?${qs}&limit=${limit}&offset=${offset}` : `/api/scanners/snort/alerts?${qs}&limit=${limit}&offset=${offset}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.message || `Erro ${res.status}`);
+      }
+      const data = await res.json();
+      const rawList = data?.items ?? (Array.isArray(data) ? data : data?.data ?? []);
+      const total = typeof data?.total === "number" ? data.total : rawList.length;
+      setSnortTotal(total);
+      const normalized = rawList.map((a: any) => ({
+        id: a.id,
+        timestamp: a.timestamp ?? a.detected_at ?? null,
+        signature: a.signature ?? a.message ?? "",
+        signature_id: a.signature_id ?? null,
+        severity: a.severity != null ? String(a.severity).toLowerCase() : "medium",
+        src_ip: a.src_ip ?? null,
+        dest_ip: a.dest_ip ?? null,
+        src_port: a.src_port ?? null,
+        dest_port: a.dest_port ?? null,
+        protocol: a.protocol ?? null,
+        category: a.category ?? null,
+      }));
+      setSnortAlerts(normalized);
+      setSnortError(null);
+      if (process.env.NODE_ENV === "development" && normalized.length > 0) {
+        console.log("✅ [Snort] Alertas carregados do banco:", normalized.length);
+      }
+    } catch (e: any) {
+      if (!silent) setSnortError(e?.message || "Erro ao carregar alertas do Snort");
+      setSnortAlerts([]);
+    } finally {
+      if (!silent) setSnortLoading(false);
+    }
+  }, [userId, institutionId]);
 
   const fetchZeekNoticeIncidents = useCallback(async () => {
     setNoticeLoading(true);
@@ -786,12 +1011,16 @@ export default function DashboardPage() {
   // Função para liberar dispositivo (adicionar ao alias Autorizados)
   const liberarDispositivo = async (dispositivo: any) => {
     try {
+      if (!userId) {
+        throw new Error("ID do usuário não disponível");
+      }
+      
       const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
       
       console.log(`🔓 Liberando dispositivo ${dispositivo.ipaddr}...`);
       
       // 1. Adicionar ao alias "Autorizados"
-      const addUrl = `${base}/aliases-db/Autorizados/add-addresses`;
+      const addUrl = `${base}/aliases-db/Autorizados/add-addresses?current_user_id=${userId}`;
       const addResponse = await fetch(addUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -817,42 +1046,67 @@ export default function DashboardPage() {
         console.log(`🗑️ Removendo da lista de bloqueados...`);
         
         // Primeiro, buscar os dados atuais do alias Bloqueados
-        const currentResponse = await fetch(`${base}/aliases-db/Bloqueados`);
+        const currentResponse = await fetch(`${base}/aliases-db/Bloqueados?current_user_id=${userId}`);
         if (currentResponse.ok) {
           const currentData = await currentResponse.json();
+          console.log(`📋 Dados atuais do alias Bloqueados:`, currentData);
           
           // Filtrar os endereços para remover o IP do dispositivo
+          // Normalizar o IP para comparação (remover espaços, etc)
+          const targetIp = dispositivo.ipaddr?.trim();
+          const originalLength = (currentData.addresses || []).length;
+          
           const updatedAddresses = (currentData.addresses || []).filter((addr: any) => {
-            const address = addr.address ?? addr?.value ?? '';
-            return address !== dispositivo.ipaddr;
+            // Tentar diferentes formatos de endereço
+            const address = (addr.address ?? addr?.value ?? '').toString().trim();
+            const isMatch = address === targetIp;
+            
+            if (isMatch) {
+              console.log(`🔍 Encontrado IP para remover: ${address} === ${targetIp}`);
+            }
+            
+            return !isMatch;
           });
           
-          // Se havia endereços e agora tem menos, significa que removemos algo
-          if (currentData.addresses && currentData.addresses.length > updatedAddresses.length) {
+          const newLength = updatedAddresses.length;
+          console.log(`📊 Endereços antes: ${originalLength}, depois: ${newLength}`);
+          
+          // Sempre atualizar se houver mudança ou se havia endereços
+          if (originalLength !== newLength || originalLength > 0) {
             // Atualizar o alias Bloqueados via PATCH
-            const patchUrl = `${base}/aliases-db/Bloqueados`;
+            const patchUrl = `${base}/aliases-db/Bloqueados?current_user_id=${userId}`;
+            const patchPayload = {
+              alias_type: currentData.alias_type || currentData.type || 'host',
+              descr: currentData.descr || currentData.description || 'Dispositivos bloqueados',
+              addresses: updatedAddresses
+            };
+            
+            console.log(`🔄 Enviando PATCH para remover IP:`, patchPayload);
+            
             const patchResponse = await fetch(patchUrl, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                alias_type: currentData.alias_type || currentData.type,
-                descr: currentData.descr || currentData.description,
-                addresses: updatedAddresses
-              })
+              body: JSON.stringify(patchPayload)
             });
 
             if (patchResponse.ok) {
-              console.log(`✅ Removido da lista de bloqueados`);
+              const patchResult = await patchResponse.json();
+              console.log(`✅ Removido da lista de bloqueados:`, patchResult);
             } else {
-              console.warn(`⚠️ Não foi possível remover da lista de bloqueados`);
+              const errorText = await patchResponse.text();
+              console.error(`⚠️ Erro ao remover da lista de bloqueados:`, patchResponse.status, errorText);
+              throw new Error(`Erro ao remover da lista de bloqueados: ${patchResponse.status} - ${errorText}`);
             }
           } else {
-            console.log(`ℹ️ IP não estava na lista de bloqueados`);
+            console.log(`ℹ️ IP ${targetIp} não estava na lista de bloqueados ou lista estava vazia`);
           }
+        } else {
+          console.warn(`⚠️ Não foi possível buscar o alias Bloqueados:`, currentResponse.status);
         }
       } catch (removeError) {
-        console.warn('Erro ao remover da lista de bloqueados:', removeError);
-        // Não falhar a operação principal se a remoção falhar
+        console.error('❌ Erro ao remover da lista de bloqueados:', removeError);
+        // Não falhar a operação principal se a remoção falhar, mas avisar o usuário
+        alert(`Aviso: Dispositivo adicionado aos autorizados, mas pode não ter sido removido dos bloqueados. Verifique manualmente.`);
       }
 
       alert(`Dispositivo ${dispositivo.nome || dispositivo.cid} liberado com sucesso!`);
@@ -901,7 +1155,11 @@ export default function DashboardPage() {
       console.log(`🔒 Bloqueando dispositivo ${blockingDevice.ipaddr} com motivo: ${blockReason}...`);
       
       // 1. Bloquear no banco de dados
-      const blockResponse = await fetch(`${base}/devices/${blockingDevice.id}/block`, {
+      if (!userId) {
+        throw new Error("ID do usuário não disponível");
+      }
+      
+      const blockResponse = await fetch(`${base}/devices/${blockingDevice.id}/block?current_user_id=${userId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -920,7 +1178,7 @@ export default function DashboardPage() {
       console.log('✅ Dispositivo bloqueado no banco:', blockResult);
 
       // 2. Adicionar IP ao alias "Bloqueados"
-      const addUrl = `${base}/aliases-db/Bloqueados/add-addresses`;
+      const addUrl = `${base}/aliases-db/Bloqueados/add-addresses?current_user_id=${userId}`;
       const addResponse = await fetch(addUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -945,7 +1203,7 @@ export default function DashboardPage() {
       try {
         console.log(`🗑️ Removendo da lista de autorizados...`);
         
-        const currentResponse = await fetch(`${base}/aliases-db/Autorizados`);
+        const currentResponse = await fetch(`${base}/aliases-db/Autorizados?current_user_id=${userId}`);
         if (currentResponse.ok) {
           const currentData = await currentResponse.json();
           
@@ -955,7 +1213,7 @@ export default function DashboardPage() {
           });
           
           if (currentData.addresses && currentData.addresses.length > updatedAddresses.length) {
-            const patchUrl = `${base}/aliases-db/Autorizados`;
+            const patchUrl = `${base}/aliases-db/Autorizados?current_user_id=${userId}`;
             const patchResponse = await fetch(patchUrl, {
               method: 'PATCH',
               headers: { 'Content-Type': 'application/json' },
@@ -1009,8 +1267,13 @@ export default function DashboardPage() {
   const [aliasSaveError, setAliasSaveError] = useState<string | null>(null);
   // Sincronização de aliases (pfSense -> base local)
   const syncAliases = useCallback(async () => {
+    if (!userId) {
+      console.warn("User ID não disponível para sincronizar aliases");
+      return false;
+    }
+    
     const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-    const url = `${base}/aliases-db/save`;
+    const url = `${base}/aliases-db/save?current_user_id=${userId}`;
     try {
       const res = await fetch(url, { method: 'POST' });
       if (res.ok) return true;
@@ -1020,7 +1283,7 @@ export default function DashboardPage() {
       }
     } catch {}
     return false;
-  }, []);
+  }, [userId]);
   // Criar novo alias
   const [createAliasOpen, setCreateAliasOpen] = useState(false);
   const [createAliasName, setCreateAliasName] = useState("");
@@ -1053,31 +1316,385 @@ export default function DashboardPage() {
     | "users"
     | "reports"
     | "settings"
+    | "my-network"
   >("devices");
   const router = useRouter();
 
   useEffect(() => {
-    try {
-      const raw = typeof window !== "undefined" ? window.localStorage.getItem("auth:user") : null;
-      if (raw) {
+    const loadUserData = async () => {
+      try {
+        const raw = typeof window !== "undefined" ? window.localStorage.getItem("auth:user") : null;
+        if (!raw) {
+          router.push("/login");
+          return;
+        }
+
         const data = JSON.parse(raw);
         setName(data?.name || null);
         setEmail(data?.email || null);
         setPicture(data?.picture || null);
-        if (data?.permission === "MANAGER") {
-          setPermission("MANAGER");
-          // Se for manager, mudar aba padrão para todos os dispositivos
-          setActiveTab("all-devices");
-        }
         if (data?.user_id) setUserId(Number(data.user_id));
-      } else {
+        if (data?.institution_name) setInstitutionName(data.institution_name);
+        if (data?.institution_city) setInstitutionCity(data.institution_city);
+
+        // Buscar permissão atualizada do backend para garantir que está correta
+        try {
+          // Usar URL relativa para passar pelo proxy do Next.js
+          const response = await fetch("/api/auth/me", {
+            credentials: "include",
+          });
+          
+          if (response.status === 403) {
+            // Usuário inativo
+            const errorData = await response.json().catch(() => ({ detail: "Sua conta está desativada" }));
+            setUserInactive(true);
+            setUserDataLoaded(true);
+            return;
+          } else if (response.ok) {
+            const userData = await response.json();
+            const backendPermission = userData?.permission;
+            const backendUserId = userData?.id;
+            const institutionName = userData?.institution_name;
+            const institutionCity = userData?.institution_city;
+            const institutionId = userData?.institution_id;
+            
+            // Atualizar localStorage com permissão e ID do backend
+            if (backendPermission || backendUserId) {
+              const updatedPayload = {
+                ...data,
+                permission: backendPermission || data?.permission,
+                user_id: backendUserId || data?.user_id,
+                institution_name: institutionName || data?.institution_name,
+                institution_city: institutionCity || data?.institution_city,
+                institution_id: institutionId || data?.institution_id,
+              };
+              window.localStorage.setItem("auth:user", JSON.stringify(updatedPayload));
+              data.permission = backendPermission || data?.permission;
+              if (backendUserId) {
+                setUserId(Number(backendUserId));
+              }
+              if (institutionName) {
+                setInstitutionName(institutionName);
+              }
+              if (institutionCity) {
+                setInstitutionCity(institutionCity);
+              }
+              if (institutionId) {
+                setInstitutionId(institutionId);
+              }
+            }
+
+            // Verificar se o usuário precisa selecionar uma instituição
+            // Apenas para usuários não-superuser e que não tenham institution_id
+            if (backendPermission !== "SUPERUSER" && !institutionId) {
+              setShowInstitutionSelector(true);
+              setUserDataLoaded(true);
+              return;
+            }
+
+            setUserDataLoaded(true);
+
+            // Redirecionar baseado na permissão do backend
+            if (backendPermission === "SUPERUSER") {
+              router.push("/dashboard/admin");
+              return;
+            } else if (backendPermission === "ADMIN") {
+              setPermission("ADMIN");
+              setActiveTab("all-devices");
+            } else {
+              setPermission("USER");
+            }
+          } else {
+            // Se não conseguir buscar do backend, usar dados do localStorage
+            const localInstitutionId = data?.institution_id;
+            
+            // Verificar se o usuário precisa selecionar uma instituição
+            if (data?.permission !== "SUPERUSER" && !localInstitutionId) {
+              setShowInstitutionSelector(true);
+              setUserDataLoaded(true);
+              return;
+            }
+
+            setUserDataLoaded(true);
+            
+            if (data?.permission === "ADMIN") {
+              setPermission("ADMIN");
+              setActiveTab("all-devices");
+            } else if (data?.permission === "SUPERUSER") {
+              router.push("/dashboard/admin");
+              return;
+            } else {
+              setPermission("USER");
+            }
+          }
+        } catch (backendError) {
+          console.warn("Erro ao buscar permissão do backend, usando localStorage:", backendError);
+          // Se falhar, usar dados do localStorage
+          const localInstitutionId = data?.institution_id;
+          
+          // Verificar se o usuário precisa selecionar uma instituição
+          if (data?.permission !== "SUPERUSER" && !localInstitutionId) {
+            setShowInstitutionSelector(true);
+            setUserDataLoaded(true);
+            return;
+          }
+
+          setUserDataLoaded(true);
+          
+          if (data?.permission === "ADMIN" || data?.permission === "MANAGER") {
+            setPermission(data?.permission === "MANAGER" ? "MANAGER" : "ADMIN");
+            setActiveTab("all-devices");
+          } else if (data?.permission === "SUPERUSER") {
+            router.push("/dashboard/admin");
+            return;
+          } else {
+            setPermission("USER");
+          }
+        }
+      } catch (e) {
+        console.warn("Falha ao ler auth:user do localStorage:", e);
         router.push("/login");
       }
-    } catch (e) {
-      console.warn("Falha ao ler auth:user do localStorage:", e);
-      router.push("/login");
-    }
+    };
+
+    loadUserData();
   }, [router]);
+
+  // Carregar dados da rede atribuída ao admin (apenas para ADMIN ou MANAGER, não SUPERUSER)
+  useEffect(() => {
+    const loadMyInstitution = async () => {
+      // Só carregar se for ADMIN ou MANAGER (não SUPERUSER) e tiver institution_id
+      if (permission === "SUPERUSER" || (permission !== "ADMIN" && permission !== "MANAGER") || !institutionId) {
+        return;
+      }
+
+      setLoadingInstitution(true);
+      try {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+        const response = await fetch(`${API_BASE}/admin/institutions/${institutionId}`, {
+          credentials: "include",
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setMyInstitution(data.institution);
+          // Verificar status dos serviços após carregar a instituição
+          if (data.institution) {
+            checkServiceStatus(data.institution);
+          }
+        } else {
+          console.error("Erro ao carregar dados da rede");
+        }
+      } catch (error) {
+        console.error("Erro ao carregar dados da rede:", error);
+      } finally {
+        setLoadingInstitution(false);
+      }
+    };
+
+    loadMyInstitution();
+  }, [permission, institutionId]);
+
+  // Função para salvar alterações da rede
+  const handleInstitutionSave = (updatedInstitution: any) => {
+    setMyInstitution(updatedInstitution);
+    setEditMode(false);
+  };
+
+  // Função para verificar status dos serviços (pfSense, Zeek e Suricata)
+  const checkServiceStatus = async (institution: any) => {
+    // Verificar pfSense
+    setPfsenseStatus("checking");
+    try {
+      const pfsenseUrl = institution.pfsense_base_url;
+      if (pfsenseUrl && userId) {
+        // Usar endpoint específico de health check
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000); // 6 segundos de timeout
+        
+        try {
+          const backendResponse = await fetch(`${API_BASE}/firewalls/pfsense/health?current_user_id=${userId}`, {
+            credentials: "include",
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          
+          if (backendResponse.ok) {
+            const data = await backendResponse.json();
+            // Verificar se o campo "online" é true
+            setPfsenseStatus(data.online === true ? "online" : "offline");
+          } else {
+            // Se retornar erro, verificar se é erro de servidor (503/504) = offline
+            // Outros erros podem ser problemas de autenticação, mas servidor está online
+            if (backendResponse.status === 503 || backendResponse.status === 504) {
+              setPfsenseStatus("offline");
+            } else {
+              // Outros erros podem significar que está online mas com problema
+              // Por segurança, considerar offline
+              setPfsenseStatus("offline");
+            }
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          // Se for timeout ou erro de conexão, considerar offline
+          if (fetchError.name === "AbortError" || fetchError.message?.includes("timeout")) {
+            setPfsenseStatus("offline");
+          } else {
+            setPfsenseStatus("offline");
+          }
+        }
+      } else {
+        setPfsenseStatus("offline");
+      }
+    } catch (error) {
+      setPfsenseStatus("offline");
+    }
+
+    // Verificar Zeek
+    setZeekStatus("checking");
+    try {
+      const zeekUrl = institution.zeek_base_url;
+      if (zeekUrl) {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        try {
+          // Usar o endpoint de health check do Zeek via backend
+          // Passar user_id como query parameter para garantir que funcione
+          const zeekHealthUrl = userId 
+            ? `${API_BASE}/scanners/zeek/health?current_user_id=${userId}`
+            : `${API_BASE}/scanners/zeek/health`;
+          const response = await fetch(zeekHealthUrl, {
+            credentials: "include",
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const data = await response.json();
+            // O endpoint retorna status "healthy" quando online, "unhealthy" quando offline
+            setZeekStatus(data.status === "healthy" ? "online" : "offline");
+          } else {
+            if (response.status === 503) {
+              // 503 significa que o Zeek está offline ou não conseguiu conectar
+              setZeekStatus("offline");
+            } else if (response.status === 401) {
+              // 401 significa que não está autenticado
+              setZeekStatus("offline");
+            } else {
+              // Outros erros podem ser problemas internos, mas considerar offline por segurança
+              setZeekStatus("offline");
+            }
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          setZeekStatus("offline");
+        }
+      } else {
+        setZeekStatus("offline");
+      }
+    } catch (error) {
+      setZeekStatus("offline");
+    }
+
+    // Verificar Suricata
+    setSuricataStatus("checking");
+    try {
+      const suricataUrl = institution.suricata_base_url;
+      if (suricataUrl && userId) {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        
+        try {
+          const suricataHealthUrl = userId 
+            ? `${API_BASE}/scanners/suricata/health?user_id=${userId}`
+            : `${API_BASE}/scanners/suricata/health`;
+          const response = await fetch(suricataHealthUrl, {
+            credentials: "include",
+            signal: controller.signal,
+          });
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const data = await response.json();
+            // O endpoint retorna success: true quando online
+            setSuricataStatus(data.success === true ? "online" : "offline");
+          } else {
+            if (response.status === 404) {
+              // 404 significa que Suricata não está configurado
+              setSuricataStatus("offline");
+            } else if (response.status === 503) {
+              setSuricataStatus("offline");
+            } else {
+              setSuricataStatus("offline");
+            }
+          }
+        } catch (fetchError: any) {
+          clearTimeout(timeoutId);
+          setSuricataStatus("offline");
+        }
+      } else {
+        // Se não tem URL configurada, não mostrar status
+        setSuricataStatus(null);
+      }
+    } catch (error) {
+      setSuricataStatus("offline");
+    }
+
+    // Verificar Snort
+    setSnortStatus("checking");
+    try {
+      const snortUrl = institution.snort_base_url;
+      if (snortUrl && userId) {
+        const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+        try {
+          const snortHealthUrl = userId
+            ? `${API_BASE}/scanners/snort/health?user_id=${userId}`
+            : `${API_BASE}/scanners/snort/health`;
+          const response = await fetch(snortHealthUrl, { credentials: "include", signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (response.ok) {
+            const data = await response.json();
+            setSnortStatus(data.success === true ? "online" : "offline");
+          } else {
+            setSnortStatus("offline");
+          }
+        } catch {
+          clearTimeout(timeoutId);
+          setSnortStatus("offline");
+        }
+      } else {
+        setSnortStatus(null);
+      }
+    } catch {
+      setSnortStatus("offline");
+    }
+  };
+
+  // Função para cancelar edição
+  const handleInstitutionCancel = () => {
+    setEditMode(false);
+    // Recarregar dados da rede (apenas se for ADMIN ou MANAGER com institution_id)
+    if ((permission === "ADMIN" || permission === "MANAGER") && institutionId) {
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "/api";
+      fetch(`${API_BASE}/admin/institutions/${institutionId}`, {
+        credentials: "include",
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          setMyInstitution(data.institution);
+          if (data.institution) {
+            checkServiceStatus(data.institution);
+          }
+        })
+        .catch((err) => console.error("Erro ao recarregar dados:", err));
+    }
+  };
 
   // Função para carregar dispositivos do usuário
   const loadDevices = async () => {
@@ -1115,18 +1732,28 @@ export default function DashboardPage() {
 
   // Carregar dispositivos do usuário quando aba ativa for "devices" e tivermos userId
   useEffect(() => {
-    loadDevices();
+    if (activeTab === "devices" && userId) {
+      loadDevices();
+    }
   }, [activeTab, userId]);
+
+  // Buscar status dos dispositivos após eles serem carregados
+  useEffect(() => {
+    if (activeTab === "devices" && devices.length > 0 && userId) {
+      fetchDeviceStatus();
+    }
+  }, [activeTab, devices.length, userId, fetchDeviceStatus]);
 
   // Carregar todos os dispositivos quando MANAGER e aba 'all-devices'
   useEffect(() => {
     const loadAllDevices = async () => {
-      if (permission !== "MANAGER" || activeTab !== "all-devices") return;
+      if (permission !== "ADMIN" || activeTab !== "all-devices") return;
+      if (!userId) return; // Aguardar userId estar disponível
       setAllLoading(true);
       setAllError(null);
       try {
         const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-        const url = `${base}/dhcp/devices?page=${page}&per_page=${perPage}`;
+        const url = `${base}/dhcp/devices?page=${page}&per_page=${perPage}&current_user_id=${userId}`;
         const res = await fetch(url);
         if (!res.ok) throw new Error(`Erro ${res.status}`);
         const data = await res.json();
@@ -1162,10 +1789,11 @@ export default function DashboardPage() {
   const [rulesAliasAction, setRulesAliasAction] = useState<Record<string, 'PASS' | 'BLOCK'>>({});
   useEffect(() => {
     const loadRulesMap = async () => {
-      if (permission !== 'MANAGER' || (activeTab !== 'aliases' && activeTab !== 'all-devices')) return;
+      if (permission !== 'ADMIN' || (activeTab !== 'aliases' && activeTab !== 'all-devices')) return;
       try {
+        if (!userId) return;
         const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000/api/devices';
-        const r = await fetch(`${base}/firewall/rules-db`);
+        const r = await fetch(`${base}/firewall/rules-db?current_user_id=${userId}`);
         if (!r.ok) return;
         const data = await r.json();
         const list = Array.isArray(data) ? data : (data?.result ?? data?.data ?? []);
@@ -1195,12 +1823,17 @@ export default function DashboardPage() {
   // Carregar aliases quando MANAGER e aba 'aliases'
   useEffect(() => {
     const loadAliases = async () => {
-      if (permission !== "MANAGER" || activeTab !== "aliases") return;
+      if (permission !== "ADMIN" || activeTab !== "aliases") return;
       setAliasesLoading(true);
       setAliasesError(null);
       try {
+        if (!userId) {
+          setAliasesError("ID do usuário não disponível");
+          return;
+        }
+        
         const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-        const url = `${base}/aliases-db`;
+        const url = `${base}/aliases-db?current_user_id=${userId}`;
         const res = await fetch(url);
         if (!res.ok) {
           if (res.status === 504) {
@@ -1235,19 +1868,345 @@ export default function DashboardPage() {
   const [rulesLoading, setRulesLoading] = useState(false);
   const [rulesError, setRulesError] = useState<string | null>(null);
 
-  // Carregar incidentes (logs notice) quando na aba 'incidents'
-  useEffect(() => {
-    if (activeTab === "incidents") {
-      fetchIncidentsFromDatabase();
+  // Carregar alertas Zeek do banco (mesmo padrão Suricata/Snort: GET /api/scanners/zeek/alerts)
+  const fetchZeekAlertsFromDb = useCallback(async (silent = false, page = 0) => {
+    if (userId == null && institutionId == null) {
+      if (!silent) setZeekError("É necessário estar logado (user/instituição) para carregar os alertas do Zeek.");
+      return;
     }
-  }, [activeTab, fetchIncidentsFromDatabase]);
+    if (!silent) {
+      setZeekLoading(true);
+      setZeekError(null);
+    }
+    try {
+      const base = process.env.NEXT_PUBLIC_API_BASE ?? "";
+      const qs = userId != null ? `user_id=${userId}` : `institution_id=${institutionId}`;
+      const limit = INCIDENTS_PAGE_SIZE;
+      const offset = page * limit;
+      const url = base ? `${base}/api/scanners/zeek/alerts?${qs}&limit=${limit}&offset=${offset}` : `/api/scanners/zeek/alerts?${qs}&limit=${limit}&offset=${offset}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || err.message || `Erro ${res.status}`);
+      }
+      const data = await res.json();
+      const rawList = data?.items ?? (Array.isArray(data) ? data : data?.data ?? []);
+      const total = typeof data?.total === "number" ? data.total : rawList.length;
+      setZeekTotal(total);
+      // Formato igual Suricata/Snort: timestamp, signature, signature_id, severity, src_ip, dest_ip, src_port, dest_port, protocol, category
+      setZeekAlerts(rawList.map((a: any) => ({
+        id: a.id,
+        timestamp: a.timestamp ?? a.detected_at ?? null,
+        signature: a.signature ?? "",
+        signature_id: a.signature_id ?? "",
+        severity: a.severity ?? "medium",
+        src_ip: a.src_ip ?? "",
+        dest_ip: a.dest_ip ?? "",
+        src_port: a.src_port ?? "",
+        dest_port: a.dest_port ?? "",
+        protocol: a.protocol ?? "",
+        category: a.category ?? "",
+      })));
+      setZeekError(null);
+      if (process.env.NODE_ENV === "development" && rawList.length > 0) {
+        console.log("✅ [Zeek] Alertas carregados do banco:", rawList.length);
+      }
+    } catch (e: any) {
+      if (!silent) setZeekError(e?.message || "Erro ao carregar alertas do Zeek");
+      setZeekAlerts([]);
+    } finally {
+      if (!silent) setZeekLoading(false);
+    }
+  }, [userId, institutionId]);
 
-  // Carregar status dos dispositivos quando necessário
+  // Carregar alertas Zeek/Suricata/Snort quando na aba 'incidents'
   useEffect(() => {
-    if (activeTab === "devices" || activeTab === "all-devices") {
+    if (activeTab !== "incidents") return;
+    if (incidentView === "zeek") {
+      fetchZeekAlertsFromDb(false, zeekPage);
+    } else if (incidentView === "suricata") {
+      fetchSuricataAlertsFromDb(false, suricataPage);
+    } else if (incidentView === "snort") {
+      fetchSnortAlertsFromDb(false, snortPage);
+    }
+  }, [activeTab, incidentView, zeekPage, suricataPage, snortPage, userId, institutionId, fetchZeekAlertsFromDb, fetchSuricataAlertsFromDb, fetchSnortAlertsFromDb]);
+
+  // Conectar ao stream SSE do Suricata (novos alertas são salvos no banco; ao receber evento refazemos o carregamento do banco)
+  // Não alterar loading aqui: o loading é controlado só pelo fetch do banco, para não travar a tabela em "Conectando..."
+  useEffect(() => {
+    if (activeTab !== "incidents" || incidentView !== "suricata") {
+      return;
+    }
+    
+    const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+    
+    // Usar userId do estado, não do localStorage
+    const currentUserId = userId;
+    
+    // Construir URL do SSE do Suricata
+    const streamUrl = currentUserId 
+      ? `${base}/api/scanners/suricata/sse/alerts?user_id=${currentUserId}`
+      : `${base}/api/scanners/suricata/sse/alerts`;
+    
+    console.log('📡 [Suricata SSE] Conectando ao stream de alertas...', streamUrl);
+    console.log('📡 [Suricata SSE] User ID:', currentUserId);
+    console.log('📡 [Suricata SSE] Institution ID:', institutionId);
+    
+    let eventSource: EventSource | null = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
+    let wasConnected = false;
+    
+    const connectToStream = () => {
+      try {
+        // Fechar conexão anterior se existir
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        
+        console.log('📡 [Suricata SSE] Tentando conectar ao stream...');
+        wasConnected = false;
+        
+        // Conectar ao stream SSE
+        eventSource = new EventSource(streamUrl, {
+          withCredentials: false
+        });
+        
+        // Evento de conexão
+        eventSource.onopen = () => {
+          console.log('✅ [Suricata SSE] Conectado ao stream de alertas do Suricata');
+          setSuricataLoading(false);
+          setSuricataError(null);
+          reconnectAttempts = 0; // Resetar contador de reconexões
+          wasConnected = true; // Marcar como conectado
+        };
+        
+        // Receber novos alertas
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            
+            if (data.type === 'connected') {
+              setSuricataLoading(false);
+              setSuricataError(null);
+              return;
+            }
+            
+            if (data.type === 'error') {
+              console.error('❌ [Suricata SSE] Erro do servidor:', data.message);
+              setSuricataError(data.message || "Erro ao conectar com Suricata");
+              setSuricataLoading(false);
+              if (eventSource) {
+                eventSource.close();
+              }
+              return;
+            }
+            
+            if (data.type === 'alert' && data.alert) {
+              // Novo alerta já foi salvo no banco pelo backend; recarregar lista do banco
+              setSuricataPage(0);
+              fetchSuricataAlertsFromDb(true, 0);
+              setSuricataError(null);
+              setSuricataLoading(false);
+            }
+          } catch (error) {
+            console.error('❌ [Suricata SSE] Erro ao processar evento:', error);
+          }
+        };
+        
+        // Tratar erros - com throttling agressivo para evitar loops
+        let lastErrorLogTime = 0;
+        let errorCount = 0;
+        
+        eventSource.onerror = (error) => {
+          const readyState = eventSource?.readyState;
+          const now = Date.now();
+          
+          // Throttling agressivo: ignorar erros muito frequentes
+          if (now - lastErrorLogTime < 10000) { // 10 segundos
+            errorCount++;
+            // Apenas logar a cada 10 erros ou a cada 10 segundos
+            if (errorCount % 10 !== 0) {
+              return;
+            }
+          } else {
+            errorCount = 0;
+          }
+          lastErrorLogTime = now;
+          
+          // Verificar estado da conexão
+          if (readyState === EventSource.CLOSED) {
+            reconnectAttempts++;
+            // Apenas logar a cada 5 tentativas para não poluir o console
+            if (reconnectAttempts % 5 === 0) {
+              console.log(`🔄 [Suricata SSE] Tentando reconectar... (tentativa ${reconnectAttempts})`);
+            }
+            
+            if (reconnectAttempts >= maxReconnectAttempts) {
+              const errorMsg = "Conexão instável com Suricata. O EventSource continuará tentando reconectar automaticamente.";
+              setSuricataError(errorMsg);
+              setSuricataLoading(false);
+            }
+            // EventSource reconecta automaticamente, não precisamos fazer manualmente
+          } else if (readyState === EventSource.CONNECTING) {
+            // EventSource está tentando reconectar automaticamente
+            // Não fazer nada - o EventSource gerencia isso
+            // Apenas resetar contador se conseguir conectar
+          } else if (readyState === EventSource.OPEN) {
+            // Conexão aberta - resetar contador
+            if (reconnectAttempts > 0) {
+              console.log('✅ [Suricata SSE] Reconectado com sucesso');
+              reconnectAttempts = 0;
+              errorCount = 0;
+            }
+            setSuricataError(null);
+            setSuricataLoading(false);
+          }
+        };
+      } catch (error) {
+        console.error('❌ [Suricata SSE] Erro ao criar EventSource:', error);
+        setSuricataError(`Erro ao criar conexão: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+        setSuricataLoading(false);
+      }
+    };
+    
+    // Iniciar conexão
+    connectToStream();
+    
+    // Cleanup: fechar conexão quando sair da aba
+    return () => {
+      console.log('⏹️ [Suricata SSE] Fechando conexão SSE');
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+    };
+  }, [activeTab, incidentView, userId, institutionId, fetchSuricataAlertsFromDb]);
+
+  // Conectar ao stream SSE do Snort (loading é controlado só pelo fetch do banco)
+  useEffect(() => {
+    if (activeTab !== "incidents" || incidentView !== "snort") return;
+    const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+    const streamUrl = userId
+      ? `${base}/api/scanners/snort/sse/alerts?user_id=${userId}`
+      : `${base}/api/scanners/snort/sse/alerts`;
+    let eventSource: EventSource | null = null;
+    const connect = () => {
+      try {
+        if (eventSource) {
+          eventSource.close();
+          eventSource = null;
+        }
+        eventSource = new EventSource(streamUrl, { withCredentials: false });
+        eventSource.onopen = () => {
+          setSnortLoading(false);
+          setSnortError(null);
+        };
+        eventSource.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "connected") {
+              setSnortLoading(false);
+              setSnortError(null);
+              return;
+            }
+            if (data.type === "error") {
+              setSnortError(data.message || "Erro ao conectar com Snort");
+              setSnortLoading(false);
+              if (eventSource) eventSource.close();
+              return;
+            }
+            if (data.type === "alert" && data.alert) {
+              // Novo alerta já foi salvo no banco pelo backend; recarregar lista do banco
+              setSnortPage(0);
+              fetchSnortAlertsFromDb(true, 0);
+              setSnortError(null);
+              setSnortLoading(false);
+            }
+          } catch {
+            // ignore parse errors
+          }
+        };
+        eventSource.onerror = () => {
+          setSnortLoading(false);
+        };
+      } catch (error) {
+        setSnortError(`Erro ao criar conexão: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
+        setSnortLoading(false);
+      }
+    };
+    connect();
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+    };
+  }, [activeTab, incidentView, userId, fetchSnortAlertsFromDb]);
+
+  // Conectar ao stream SSE do Zeek (igual Suricata/Snort: alertas salvos no banco, refetch ao receber)
+  useEffect(() => {
+    if (activeTab !== "incidents" || incidentView !== "zeek") return;
+    const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000";
+    const streamUrl = userId
+      ? `${base}/api/scanners/zeek/sse/alerts?user_id=${userId}`
+      : institutionId
+        ? `${base}/api/scanners/zeek/sse/alerts?institution_id=${institutionId}`
+        : null;
+    if (!streamUrl) return;
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(streamUrl, { withCredentials: false });
+      eventSource.onopen = () => {
+        setZeekLoading(false);
+        setZeekError(null);
+      };
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === "connected") {
+            setZeekLoading(false);
+            setZeekError(null);
+            return;
+          }
+          if (data.type === "error") {
+            setZeekError(data.message || "Erro ao conectar com Zeek");
+            setZeekLoading(false);
+            if (eventSource) eventSource.close();
+            return;
+          }
+          if (data.type === "alert" && data.alert) {
+            setZeekPage(0);
+            fetchZeekAlertsFromDb(true, 0);
+            setZeekError(null);
+            setZeekLoading(false);
+          }
+        } catch {
+          // ignore parse errors
+        }
+      };
+      eventSource.onerror = () => {
+        setZeekLoading(false);
+      };
+    } catch (error) {
+      setZeekError(`Erro ao criar conexão: ${error instanceof Error ? error.message : "Erro desconhecido"}`);
+      setZeekLoading(false);
+    }
+    return () => {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+    };
+  }, [activeTab, incidentView, userId, institutionId, fetchZeekAlertsFromDb]);
+
+  // Carregar status dos dispositivos quando necessário (para all-devices também, após dispositivos carregarem)
+  useEffect(() => {
+    if (activeTab === "all-devices" && allDevices.length > 0 && userId) {
       fetchDeviceStatus();
     }
-  }, [activeTab, fetchDeviceStatus]);
+  }, [activeTab, allDevices.length, userId, fetchDeviceStatus]);
 
   // Recarregar status dos dispositivos a cada 30 segundos
   useEffect(() => {
@@ -1262,12 +2221,13 @@ export default function DashboardPage() {
 
   useEffect(() => {
     const loadRules = async () => {
-      if (permission !== "MANAGER" || activeTab !== "rules") return;
+      if (permission !== "ADMIN" || activeTab !== "rules") return;
       setRulesLoading(true);
       setRulesError(null);
       try {
+        if (!userId) return;
         const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-        const url = `${base}/firewall/rules-db`;
+        const url = `${base}/firewall/rules-db?current_user_id=${userId}`;
         const res = await fetch(url);
         if (!res.ok) {
           let msg = `Erro ${res.status}`;
@@ -1325,8 +2285,12 @@ export default function DashboardPage() {
     try {
       const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000/api/devices';
       
+      if (!userId) {
+        throw new Error("ID do usuário não disponível");
+      }
+      
       // Primeiro, obter os dados atuais do alias
-      const currentResponse = await fetch(`${base}/aliases-db/${encodeURIComponent(aliasName)}`);
+      const currentResponse = await fetch(`${base}/aliases-db/${encodeURIComponent(aliasName)}?current_user_id=${userId}`);
       if (!currentResponse.ok) {
         throw new Error(`Erro ao buscar dados do alias: ${currentResponse.status}`);
       }
@@ -1349,7 +2313,7 @@ export default function DashboardPage() {
       console.log('🔄 Atualizando alias:', aliasName, 'Removendo:', addressToRemove, 'Payload:', patchPayload);
       
       // Fazer PATCH para atualizar o alias
-      const patchUrl = `${base}/aliases-db/${encodeURIComponent(aliasName)}`;
+      const patchUrl = `${base}/aliases-db/${encodeURIComponent(aliasName)}?current_user_id=${userId}`;
       const patchResponse = await fetch(patchUrl, {
         method: 'PATCH',
         headers: {
@@ -1392,11 +2356,16 @@ export default function DashboardPage() {
 
   // Função para obter status formatado do dispositivo
   const getDeviceOnlineStatus = (deviceIP: string, deviceMAC: string) => {
-    const statusByIP = deviceStatus[deviceIP];
-    const statusByMAC = deviceStatus[deviceMAC];
+    // Normalizar valores para comparação
+    const normalizedIP = deviceIP?.trim();
+    const normalizedMAC = deviceMAC?.trim()?.toLowerCase();
+    
+    const statusByIP = normalizedIP ? deviceStatus[normalizedIP] : null;
+    const statusByMAC = normalizedMAC ? deviceStatus[normalizedMAC] : null;
     const status = statusByIP || statusByMAC;
     
     if (!status) {
+      // Dispositivo sem entrada no mapa de status (ex.: não está na resposta DHCP do pfSense)
       return {
         label: 'Desconhecido',
         color: 'bg-gray-500',
@@ -1448,6 +2417,17 @@ export default function DashboardPage() {
     return (first + last).toUpperCase();
   }, [name, email]);
 
+  // Mostrar seletor de instituição se necessário
+  if (showInstitutionSelector) {
+    return (
+      <InstitutionSelector
+        onInstitutionSelected={() => {
+          setShowInstitutionSelector(false);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       {/* Header */}
@@ -1456,6 +2436,14 @@ export default function DashboardPage() {
       <header className="h-20 px-6 flex items-center justify-between bg-gradient-to-r from-slate-800 via-slate-700 to-slate-600 shadow-lg">
         <div className="text-xl font-bold">IoT-EDU</div>
         <div className="flex items-center gap-3">
+          {(institutionName || institutionCity) && (
+            <div className="text-xs text-slate-300 bg-slate-700/50 px-3 py-1 rounded-md border border-slate-600">
+              {institutionName && institutionCity 
+                ? `${institutionName} ${institutionCity}`
+                : institutionName || institutionCity
+              }
+            </div>
+          )}
           <div className="text-sm text-slate-200">{name || "Usuário"}</div>
           <div className="w-10 h-10 rounded-full bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center overflow-hidden border border-white/20 shadow-lg">
             {picture ? (
@@ -1502,13 +2490,16 @@ export default function DashboardPage() {
         <aside className="w-64 bg-slate-800 min-h-[calc(100vh-80px)] border-r border-slate-700 p-4">
           <nav className="space-y-1">
             <div className="px-4 py-3 rounded-md bg-slate-700/60 border-l-4 border-cyan-400 text-cyan-300">📊 Dashboard</div>
-            {permission !== "MANAGER" && (
+            {permission !== "ADMIN" && (
               <button className="w-full text-left px-4 py-3 rounded-md hover:bg-slate-700/60" onClick={() => setActiveTab("devices")}>🔧 Meus Dispositivos</button>
             )}
-            {permission === "MANAGER" && (
+            {(permission === "ADMIN" || permission === "MANAGER") && (
               <>
                 <button className="w-full text-left px-4 py-3 rounded-md hover:bg-slate-700/60" onClick={() => setActiveTab("all-devices")}>🗂️ Lista de Dispositivos</button>
                 <button className="w-full text-left px-4 py-3 rounded-md hover:bg-slate-700/60" onClick={() => setActiveTab("aliases")}>🧩 Mapeamento Aliases</button>
+                {institutionId && permission !== "SUPERUSER" && (
+                  <button className="w-full text-left px-4 py-3 rounded-md hover:bg-slate-700/60" onClick={() => setActiveTab("my-network")}>🌐 Minha Rede</button>
+                )}
               </>
             )}
             <button className="w-full text-left px-4 py-3 rounded-md hover:bg-slate-700/60" onClick={() => setActiveTab("incidents")}>🚨 Incidentes de Segurança</button>
@@ -1530,7 +2521,7 @@ export default function DashboardPage() {
                 </div>
               </div>
             )}
-            {permission === "MANAGER" ? (
+            {permission === "ADMIN" ? (
               <>
                 {/* Card: Total de Dispositivos */}
                 <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 relative overflow-hidden">
@@ -1641,7 +2632,7 @@ export default function DashboardPage() {
 
           {/* Tabs */}
           <div className="border-b border-slate-700 mb-4 flex gap-6 flex-wrap">
-            {permission !== "MANAGER" && (
+            {permission !== "ADMIN" && (
               <button
                 className={`pb-2 -mb-px border-b-2 ${
                   activeTab === "devices" ? "border-indigo-400 text-indigo-400" : "border-transparent text-slate-300 hover:text-slate-100"
@@ -1651,7 +2642,7 @@ export default function DashboardPage() {
                 Meus Dispositivos
               </button>
             )}
-            {permission === "MANAGER" && (
+            {permission === "ADMIN" && (
               <>
                 <button
                   className={`pb-2 -mb-px border-b-2 ${
@@ -1788,8 +2779,13 @@ export default function DashboardPage() {
                             
                             // IP será atribuído automaticamente pelo backend
                             console.log('🔄 Dispositivo será cadastrado com IP automático');
+                            
+                            if (!userId) {
+                              throw new Error("ID do usuário não disponível. Faça login novamente.");
+                            }
+                            
                             const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-                            const url = `${base}/dhcp/save`;
+                            const url = `${base}/dhcp/save?current_user_id=${userId}`;
                             const res = await fetch(url, {
                               method: 'POST',
                               headers: { 'Content-Type': 'application/json' },
@@ -1815,7 +2811,10 @@ export default function DashboardPage() {
                             let deviceId: number | null = null;
                             
                             try {
-                              const searchUrl = `${base}/dhcp/devices/search?query=${encodeURIComponent(mac)}`;
+                              if (!userId) {
+                                throw new Error("ID do usuário não disponível");
+                              }
+                              const searchUrl = `${base}/dhcp/devices/search?query=${encodeURIComponent(mac)}&current_user_id=${userId}`;
                               const searchRes = await fetch(searchUrl);
                               const searchData = await searchRes.json();
                               const list = Array.isArray(searchData)
@@ -2132,7 +3131,7 @@ export default function DashboardPage() {
           )}
 
 
-          {permission === "MANAGER" && activeTab === "all-devices" && (
+          {permission === "ADMIN" && activeTab === "all-devices" && (
             <div>
               {/* Filtros */}
               <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-4">
@@ -2326,7 +3325,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {permission === "MANAGER" && activeTab === "aliases" && (
+          {permission === "ADMIN" && activeTab === "aliases" && (
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="text-slate-300">Mapeamento Aliases</div>
@@ -2338,7 +3337,7 @@ export default function DashboardPage() {
                     await syncAliases();
                     try {
                       const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-                      const r = await fetch(`${base}/aliases-db`);
+                      const r = await fetch(`${base}/aliases-db?current_user_id=${userId}`);
                       if (!r.ok) {
                         if (r.status === 504) throw new Error('pfSense indisponível. Tente novamente mais tarde.');
                       }
@@ -2360,7 +3359,7 @@ export default function DashboardPage() {
                       setAliasesLoading(false);
                     }
                   }}>Sincronizar</button>
-                  <button className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600" onClick={() => { setAliasesError(null); setAliasesLoading(true); const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices"; fetch(`${base}/aliases-db`).then(r => r.json()).then((data) => {
+                  <button className="px-3 py-1 rounded bg-slate-700 hover:bg-slate-600" onClick={() => { if (!userId) { setAliasesError("ID do usuário não disponível"); return; } setAliasesError(null); setAliasesLoading(true); const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices"; fetch(`${base}/aliases-db?current_user_id=${userId}`).then(r => r.json()).then((data) => {
                     const list = Array.isArray(data) ? data : (data?.aliases ?? data?.items ?? []);
                     const normalized = list.map((a: any) => ({
                       id: a.id ?? undefined,
@@ -2416,8 +3415,11 @@ export default function DashboardPage() {
                                   if (Array.isArray((a as any).addresses) && (a as any).addresses.length) {
                                     setAliasDetails({ name: a.pathName, addresses: (a as any).addresses });
                                   } else {
+                                    if (!userId) {
+                                      throw new Error("ID do usuário não disponível");
+                                    }
                                     const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000/api/devices';
-                                    const r = await fetch(`${base}/aliases-db/${encodeURIComponent(a.pathName)}`);
+                                    const r = await fetch(`${base}/aliases-db/${encodeURIComponent(a.pathName)}?current_user_id=${userId}`);
                                     if (!r.ok) {
                                       let msg = `Erro ${r.status}`;
                                       try { const j = await r.json(); msg = j?.detail || msg; } catch {}
@@ -2588,8 +3590,12 @@ export default function DashboardPage() {
                             }
                           }
                           if (items.length === 0) throw new Error('Inclua pelo menos um endereço');
+                          if (!userId) {
+                            throw new Error("ID do usuário não disponível");
+                          }
+                          
                           const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000/api/devices';
-                          const url = `${base}/aliases-db/${encodeURIComponent(aliasName)}/add-addresses`;
+                          const url = `${base}/aliases-db/${encodeURIComponent(aliasName)}/add-addresses?current_user_id=${userId}`;
                           const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ addresses: items }) });
                           if (!res.ok) {
                             // tentar extrair JSON.detail do backend
@@ -2609,8 +3615,11 @@ export default function DashboardPage() {
                           await syncAliases();
                           // Recarregar aliases
                           try {
+                            if (!userId) {
+                              throw new Error("ID do usuário não disponível");
+                            }
                             setAliasesLoading(true);
-                            const data = await fetch(`${base}/aliases-db`).then(r => r.json());
+                            const data = await fetch(`${base}/aliases-db?current_user_id=${userId}`).then(r => r.json());
                             const list = Array.isArray(data) ? data : (data?.aliases ?? data?.items ?? []);
                             const normalized = list.map((a: any) => ({
                               id: a.id ?? undefined,
@@ -2772,8 +3781,12 @@ export default function DashboardPage() {
                               if (!cidrRegex.test(it.address)) throw new Error(`CIDR inválido: ${it.address}`);
                             }
                           }
+                          if (!userId) {
+                            throw new Error("ID do usuário não disponível");
+                          }
+                          
                           const base = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:8000/api/devices';
-                          const res = await fetch(`${base}/aliases-db/create`, {
+                          const res = await fetch(`${base}/aliases-db/create?current_user_id=${userId}`, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ name, alias_type: createAliasType, descr: createAliasDescr, addresses: items })
@@ -2791,7 +3804,7 @@ export default function DashboardPage() {
                           // Recarregar lista (com filtro que remove 'network')
                           try {
                             setAliasesLoading(true);
-                            const data = await fetch(`${base}/aliases-db`).then(r => r.json());
+                            const data = await fetch(`${base}/aliases-db?current_user_id=${userId}`).then(r => r.json());
                             const list = Array.isArray(data) ? data : (data?.aliases ?? data?.items ?? []);
                             const normalized = list.map((a: any) => ({
                               id: a.id ?? undefined,
@@ -2819,7 +3832,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {permission === "MANAGER" && activeTab === "rules" && (
+          {permission === "ADMIN" && activeTab === "rules" && (
             <div>
               <div className="flex items-center gap-3 mb-4">
                 <div className="text-slate-300">Regras de Firewall</div>
@@ -2828,14 +3841,15 @@ export default function DashboardPage() {
                     setRulesError(null);
                     setRulesLoading(true);
                     try {
+                      if (!userId) throw new Error('Usuário não identificado');
                       const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-                      const sync = await fetch(`${base}/firewall/rules/save`, { method: 'POST' });
+                      const sync = await fetch(`${base}/firewall/rules/save?current_user_id=${userId}`, { method: 'POST' });
                       if (!sync.ok) {
                         let msg = `Erro ${sync.status}`;
                         try { const j = await sync.json(); msg = j?.detail || msg; } catch {}
                         throw new Error(msg);
                       }
-                      const r = await fetch(`${base}/firewall/rules-db`);
+                      const r = await fetch(`${base}/firewall/rules-db?current_user_id=${userId}`);
                       if (!r.ok) {
                         let msg = `Erro ${r.status}`;
                         try { const j = await r.json(); msg = j?.detail || msg; } catch {}
@@ -2870,8 +3884,9 @@ export default function DashboardPage() {
                     setRulesError(null);
                     setRulesLoading(true);
                     try {
+                      if (!userId) throw new Error('Usuário não identificado');
                       const base = process.env.NEXT_PUBLIC_API_BASE || "http://127.0.0.1:8000/api/devices";
-                      const r = await fetch(`${base}/firewall/rules-db`);
+                      const r = await fetch(`${base}/firewall/rules-db?current_user_id=${userId}`);
                       if (!r.ok) {
                         let msg = `Erro ${r.status}`;
                         try { const j = await r.json(); msg = j?.detail || msg; } catch {}
@@ -3192,165 +4207,652 @@ export default function DashboardPage() {
           {/* Tab content: Incidentes (Logs Notice) */}
           {activeTab === "incidents" && (
             <div>
+              {/* Seletor de visualização (Zeek ou Suricata) */}
+              <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="text-slate-300 font-medium">Fonte de Incidentes:</div>
+                  <button
+                    className={`px-4 py-2 rounded-md transition-colors ${
+                      incidentView === "zeek"
+                        ? "bg-cyan-600 text-white"
+                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}
+                    onClick={() => { setIncidentView("zeek"); setZeekPage(0); }}
+                  >
+                    🔍 Zeek
+                  </button>
+                  <button
+                    className={`px-4 py-2 rounded-md transition-colors ${
+                      incidentView === "suricata"
+                        ? "bg-cyan-600 text-white"
+                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}
+                    onClick={() => { setIncidentView("suricata"); setSuricataPage(0); }}
+                  >
+                    🛡️ Suricata
+                  </button>
+                  <button
+                    className={`px-4 py-2 rounded-md transition-colors ${
+                      incidentView === "snort"
+                        ? "bg-cyan-600 text-white"
+                        : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+                    }`}
+                    onClick={() => { setIncidentView("snort"); setSnortPage(0); }}
+                  >
+                    🐍 Snort
+                  </button>
+                </div>
+              </div>
+              
               {/* Mensagem informativa */}
               <div className="bg-amber-900/30 border border-amber-700 rounded-lg p-3 mb-4">
                 <div className="flex items-center gap-2 text-amber-300">
                   <span>🚨</span>
                   <span className="text-sm">
-                    Esta aba exibe apenas os incidentes de segurança capturados nos logs notice do Zeek
+                    {incidentView === "zeek"
+                      ? "Esta aba exibe os incidentes de segurança capturados nos logs notice do Zeek"
+                      : incidentView === "suricata"
+                        ? "Esta aba exibe os alertas em tempo real do Suricata IDS/IPS"
+                        : "Esta aba exibe os alertas em tempo real do Snort IDS/IPS"}
                   </span>
                 </div>
               </div>
               
-              {/* Filtros e controles */}
-              <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-4">
-                <div className="text-slate-300 font-medium mb-3">Filtros de Incidentes</div>
-                <div className="flex gap-2">
-                  <button
-                    className="px-4 py-2 rounded-md bg-cyan-500 hover:bg-cyan-600 disabled:opacity-50"
-                    onClick={() => {
-                      // Limpar filtros se necessário
-                    }}
-                    disabled={noticeLoading}
-                  >
-                    Limpar Filtros
-                  </button>
-                  <button
-                    className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 disabled:opacity-50"
-                    onClick={fetchIncidentsFromDatabase}
-                    disabled={noticeLoading}
-                  >
-                    {noticeLoading ? 'Carregando...' : 'Atualizar'}
-                  </button>
-                  
-                </div>
-              </div>
-
-              {/* Tabela de incidentes notice */}
-              <div className="overflow-x-auto rounded-lg border border-slate-700">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-800">
-                    <tr>
-                      <th className="px-4 py-3">Timestamp</th>
-                      <th className="px-4 py-3">Tipo de Incidente</th>
-                      <th className="px-4 py-3">Severidade</th>
-                      <th className="px-4 py-3">Descrição</th>
-                      <th className="px-4 py-3">IP do Dispositivo</th>
-                      <th className="px-4 py-3">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {noticeLoading && (
-                      <tr>
-                        <td className="px-4 py-3 text-center" colSpan={7}>
-                          <div className="flex items-center justify-center gap-2">
-                            <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
-                            Carregando incidentes...
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                    
-                    {noticeError && (
-                      <tr>
-                        <td className="px-4 py-3 text-center text-rose-400" colSpan={6}>
-                          <div className="flex items-center justify-center gap-2">
-                            <span>⚠️</span>
-                            {noticeError}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                    
-                    {!noticeLoading && !noticeError && noticeIncidents.length === 0 && (
-                      <tr>
-                        <td className="px-4 py-3 text-center text-slate-400" colSpan={6}>
-                          <div className="flex items-center justify-center gap-2">
-                            <span>📋</span>
-                            Nenhum incidente encontrado nos logs notice
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                    
-                    {!noticeLoading && !noticeError && noticeIncidents.map((incident, index) => {
-                      // Função para determinar cor da severidade
-                      const getSeverityColor = (severity: string) => {
-                        switch (severity?.toLowerCase()) {
-                          case 'critical': return 'bg-red-100 text-red-800';
-                          case 'high': return 'bg-orange-100 text-orange-800';
-                          case 'medium': return 'bg-yellow-100 text-yellow-800';
-                          case 'low': return 'bg-green-100 text-green-800';
-                          default: return 'bg-gray-100 text-gray-800';
-                        }
-                      };
-                      
-                      // Função para determinar cor do status
-                      const getStatusColor = (status: string) => {
-                        switch (status?.toLowerCase()) {
-                          case 'new': return 'bg-blue-100 text-blue-800';
-                          case 'investigating': return 'bg-purple-100 text-purple-800';
-                          case 'resolved': return 'bg-green-100 text-green-800';
-                          case 'false_positive': return 'bg-gray-100 text-gray-800';
-                          case 'escalated': return 'bg-red-100 text-red-800';
-                          default: return 'bg-gray-100 text-gray-800';
-                        }
-                      };
-                      
-                      return (
-                        <tr key={incident.id || index} className="border-b border-slate-700 hover:bg-slate-800/50">
-                          <td className="px-4 py-3 text-slate-300">
-                            <div className="text-sm font-mono">{incident.ts}</div>
-                            <div className="text-xs text-slate-500 mt-1">
-                              {incident.detected_relative && (
-                                <span className="bg-slate-700 px-2 py-1 rounded text-slate-300">
-                                  {incident.detected_relative}
-                                </span>
-                              )}
-                            </div>
-                            {incident.created_at && incident.created_at !== '-' && (
-                              <div className="text-xs text-slate-500 mt-1">
-                                Criado: {incident.created_relative}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-sm">
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800">
-                                {incident.note}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="text-sm">
-                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor(incident.severity)}`}>
-                                {incident.severity?.toUpperCase() || 'UNKNOWN'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-300">
-                            <div className="text-sm max-w-xs truncate" title={incident.msg}>
-                              {incident.msg}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-300">
-                            <div className="text-sm font-mono">{incident.id_orig_h}</div>
-                          </td>
-                          <td className="px-4 py-3 text-slate-300">
-                            <div className="text-sm text-slate-400">Bloqueio automático ativo</div>
-                          </td>
+              {/* Visualização do Zeek (mesmo padrão Suricata/Snort) */}
+              {incidentView === "zeek" && (
+                <>
+                  <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-slate-300 font-medium">Alertas do Zeek</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <div className={`w-2 h-2 rounded-full ${zeekLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`}></div>
+                        <span>{zeekLoading ? "Conectando..." : "Stream ativo (SSE)"}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-slate-400">Filtrar por severidade:</label>
+                        <select
+                          value={zeekSeverityFilter}
+                          onChange={(e) => setZeekSeverityFilter(e.target.value)}
+                          className="px-3 py-1.5 rounded-md bg-slate-700 text-slate-200 border border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          title="Filtrar alertas Zeek por severidade"
+                          aria-label="Filtrar alertas Zeek por severidade"
+                        >
+                          <option value="all">Todas</option>
+                          <option value="critical">Crítica</option>
+                          <option value="high">Alta</option>
+                          <option value="medium">Média</option>
+                          <option value="low">Baixa</option>
+                        </select>
+                        <span className="text-xs text-slate-500">
+                          ({zeekAlerts.filter(alert =>
+                            zeekSeverityFilter === "all" ||
+                            alert.severity?.toLowerCase() === zeekSeverityFilter.toLowerCase()
+                          ).length} alertas)
+                        </span>
+                      </div>
+                      <button
+                        className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 disabled:opacity-50 text-sm"
+                        onClick={() => { setZeekPage(0); fetchZeekAlertsFromDb(false, 0); }}
+                        disabled={zeekLoading}
+                      >
+                        Atualizar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-slate-700">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-800">
+                        <tr>
+                          <th className="px-4 py-3">Timestamp</th>
+                          <th className="px-4 py-3">Assinatura</th>
+                          <th className="px-4 py-3">Severidade</th>
+                          <th className="px-4 py-3">IP Origem</th>
+                          <th className="px-4 py-3">IP Destino</th>
+                          <th className="px-4 py-3">Protocolo</th>
+                          <th className="px-4 py-3">Categoria</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              
-              {/* Estatísticas */}
-              {!noticeLoading && !noticeError && noticeIncidents.length > 0 && (
-                <div className="mt-4 text-sm text-slate-400">
-                  Total de incidentes: {noticeIncidents.length}
-                </div>
+                      </thead>
+                      <tbody>
+                        {zeekLoading && (
+                          <tr>
+                            <td className="px-4 py-3 text-center" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                                Conectando ao Zeek...
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {zeekError && (
+                          <tr>
+                            <td className="px-4 py-3 text-center text-rose-400" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <span>⚠️</span>
+                                {zeekError}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {!zeekLoading && !zeekError && zeekAlerts.length === 0 && (
+                          <tr>
+                            <td className="px-4 py-3 text-center text-slate-400" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <span>📋</span>
+                                Aguardando alertas do Zeek...
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {!zeekLoading && !zeekError && zeekAlerts.length > 0 &&
+                          zeekAlerts.filter(alert =>
+                            zeekSeverityFilter === "all" ||
+                            alert.severity?.toLowerCase() === zeekSeverityFilter.toLowerCase()
+                          ).length === 0 && (
+                            <tr>
+                              <td className="px-4 py-3 text-center text-slate-400" colSpan={7}>
+                                <span>🔍</span> Nenhum alerta encontrado com severidade "{zeekSeverityFilter}"
+                              </td>
+                            </tr>
+                        )}
+                        {!zeekLoading && !zeekError && zeekAlerts
+                          .filter(alert =>
+                            zeekSeverityFilter === "all" ||
+                            alert.severity?.toLowerCase() === zeekSeverityFilter.toLowerCase()
+                          )
+                          .map((alert, index) => {
+                            const getZeekSeverityColor = (severity: string) => {
+                              switch (severity?.toLowerCase()) {
+                                case "critical": return "bg-red-500/20 text-red-400 border border-red-500/30";
+                                case "high": return "bg-orange-500/20 text-orange-400 border border-orange-500/30";
+                                case "medium": return "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30";
+                                case "low": return "bg-green-500/20 text-green-400 border border-green-500/30";
+                                default: return "bg-slate-500/20 text-slate-400 border border-slate-500/30";
+                              }
+                            };
+                            const formatZeekTs = (timestamp: string) => {
+                              if (!timestamp) return "-";
+                              try {
+                                const date = new Date(timestamp);
+                                return date.toLocaleString("pt-BR", {
+                                  day: "2-digit", month: "2-digit", year: "numeric",
+                                  hour: "2-digit", minute: "2-digit", second: "2-digit"
+                                });
+                              } catch { return timestamp; }
+                            };
+                            const fullSig = alert.signature || alert.message || "";
+                            const tooltipText = [fullSig, alert.signature_id && alert.signature_id !== "**" ? `SID: ${alert.signature_id}` : ""].filter(Boolean).join("\n");
+                            return (
+                              <tr key={alert.id ?? index} className="border-b border-slate-700 hover:bg-slate-800/50 transition-colors">
+                                <td className="px-4 py-3 text-sm text-slate-300">{formatZeekTs(alert.timestamp)}</td>
+                                <td className="px-4 py-3">
+                                  <div className="text-sm text-slate-200 max-w-xs" title={tooltipText}>
+                                    {getFriendlySignatureLabel(fullSig, alert.category)}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${getZeekSeverityColor(alert.severity)}`}>
+                                    {alert.severity?.toUpperCase() || "UNKNOWN"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-sm font-mono text-slate-300">{alert.src_ip || "-"}</span>
+                                    {alert.src_port && <span className="text-xs text-slate-500">:{alert.src_port}</span>}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <div className="flex items-center gap-1">
+                                    <span className="text-sm font-mono text-slate-300">{alert.dest_ip || "-"}</span>
+                                    {alert.dest_port && <span className="text-xs text-slate-500">:{alert.dest_port}</span>}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="inline-flex items-center px-2 py-1 rounded bg-slate-700/50 text-slate-300 text-xs font-medium">{alert.protocol || "-"}</span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-400">{alert.category || "-"}</td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {!zeekLoading && !zeekError && zeekTotal > 0 && (
+                    <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+                      <span className="text-sm text-slate-400">Total: {zeekTotal} alertas</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm"
+                          disabled={zeekPage === 0 || zeekLoading}
+                          onClick={() => setZeekPage((p) => Math.max(0, p - 1))}
+                        >
+                          Anterior
+                        </button>
+                        <span className="text-sm text-slate-300">
+                          Página {zeekPage + 1} de {Math.max(1, Math.ceil(zeekTotal / INCIDENTS_PAGE_SIZE))}
+                        </span>
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm"
+                          disabled={zeekPage >= Math.ceil(zeekTotal / INCIDENTS_PAGE_SIZE) - 1 || zeekLoading}
+                          onClick={() => setZeekPage((p) => p + 1)}
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Visualização do Suricata */}
+              {incidentView === "suricata" && (
+                <>
+                  {/* Filtros e controles */}
+                  <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-slate-300 font-medium">Alertas do Suricata</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <div className={`w-2 h-2 rounded-full ${suricataLoading ? 'bg-yellow-500 animate-pulse' : 'bg-green-500'}`}></div>
+                        <span>{suricataLoading ? 'Conectando...' : 'Stream ativo (SSE)'}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {/* Filtro de severidade */}
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-slate-400">Filtrar por severidade:</label>
+                        <select
+                          value={suricataSeverityFilter}
+                          onChange={(e) => setSuricataSeverityFilter(e.target.value)}
+                          className="px-3 py-1.5 rounded-md bg-slate-700 text-slate-200 border border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          title="Filtrar alertas por severidade"
+                          aria-label="Filtrar alertas por severidade"
+                        >
+                          <option value="all">Todas</option>
+                          <option value="critical">Crítica</option>
+                          <option value="high">Alta</option>
+                          <option value="medium">Média</option>
+                          <option value="low">Baixa</option>
+                        </select>
+                        <span className="text-xs text-slate-500">
+                          ({suricataAlerts.filter(alert => 
+                            suricataSeverityFilter === 'all' || 
+                            alert.severity?.toLowerCase() === suricataSeverityFilter.toLowerCase()
+                          ).length} alertas)
+                        </span>
+                      </div>
+                      <button
+                        className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 disabled:opacity-50 text-sm"
+                        onClick={() => { setSuricataPage(0); fetchSuricataAlertsFromDb(false, 0); }}
+                        disabled={suricataLoading}
+                      >
+                        Atualizar
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tabela de alertas do Suricata */}
+                  <div className="overflow-x-auto rounded-lg border border-slate-700">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-800">
+                        <tr>
+                          <th className="px-4 py-3">Timestamp</th>
+                          <th className="px-4 py-3">Assinatura</th>
+                          <th className="px-4 py-3">Severidade</th>
+                          <th className="px-4 py-3">IP Origem</th>
+                          <th className="px-4 py-3">IP Destino</th>
+                          <th className="px-4 py-3">Protocolo</th>
+                          <th className="px-4 py-3">Categoria</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {suricataLoading && (
+                          <tr>
+                            <td className="px-4 py-3 text-center" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                                Conectando ao Suricata...
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        
+                        {suricataError && (
+                          <tr>
+                            <td className="px-4 py-3 text-center text-rose-400" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <span>⚠️</span>
+                                {suricataError}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        
+                        {!suricataLoading && !suricataError && suricataAlerts.length === 0 && (
+                          <tr>
+                            <td className="px-4 py-3 text-center text-slate-400" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <span>📋</span>
+                                Aguardando alertas do Suricata...
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        
+                        {!suricataLoading && !suricataError && suricataAlerts.length > 0 && 
+                         suricataAlerts.filter(alert => 
+                           suricataSeverityFilter === 'all' || 
+                           alert.severity?.toLowerCase() === suricataSeverityFilter.toLowerCase()
+                         ).length === 0 && (
+                          <tr>
+                            <td className="px-4 py-3 text-center text-slate-400" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <span>🔍</span>
+                                Nenhum alerta encontrado com severidade "{suricataSeverityFilter}"
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        
+                        {!suricataLoading && !suricataError && suricataAlerts
+                          .filter(alert => 
+                            suricataSeverityFilter === 'all' || 
+                            alert.severity?.toLowerCase() === suricataSeverityFilter.toLowerCase()
+                          )
+                          .map((alert, index) => {
+                          const getSeverityColor = (severity: string) => {
+                            switch (severity?.toLowerCase()) {
+                              case 'critical': return 'bg-red-500/20 text-red-400 border border-red-500/30';
+                              case 'high': return 'bg-orange-500/20 text-orange-400 border border-orange-500/30';
+                              case 'medium': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30';
+                              case 'low': return 'bg-green-500/20 text-green-400 border border-green-500/30';
+                              default: return 'bg-slate-500/20 text-slate-400 border border-slate-500/30';
+                            }
+                          };
+                          
+                          // Formatar timestamp
+                          const formatTimestamp = (timestamp: string) => {
+                            if (!timestamp) return '-';
+                            try {
+                              const date = new Date(timestamp);
+                              return date.toLocaleString('pt-BR', {
+                                day: '2-digit',
+                                month: '2-digit',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit'
+                              });
+                            } catch {
+                              return timestamp;
+                            }
+                          };
+                          
+                          const fullSigSuricata = alert.signature || alert.message || "";
+                          const tooltipSuricata = [fullSigSuricata, alert.signature_id && alert.signature_id !== "**" ? `SID: ${alert.signature_id}` : ""].filter(Boolean).join("\n");
+                          return (
+                            <tr key={index} className="border-b border-slate-700 hover:bg-slate-800/50 transition-colors">
+                              <td className="px-4 py-3">
+                                <div className="text-sm text-slate-300">{formatTimestamp(alert.timestamp)}</div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="text-sm text-slate-200 max-w-xs" title={tooltipSuricata}>
+                                  {getFriendlySignatureLabel(fullSigSuricata, alert.category)}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${getSeverityColor(alert.severity)}`}>
+                                  {alert.severity?.toUpperCase() || 'UNKNOWN'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-sm font-mono text-slate-300">{alert.src_ip || '-'}</span>
+                                  {alert.src_port && (
+                                    <span className="text-xs text-slate-500">:{alert.src_port}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-sm font-mono text-slate-300">{alert.dest_ip || '-'}</span>
+                                  {alert.dest_port && (
+                                    <span className="text-xs text-slate-500">:{alert.dest_port}</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3">
+                                <span className="inline-flex items-center px-2 py-1 rounded bg-slate-700/50 text-slate-300 text-xs font-medium">
+                                  {alert.protocol || '-'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="text-sm text-slate-400">{alert.category || '-'}</div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  
+                  {/* Estatísticas */}
+                  {/* Paginação Suricata */}
+                  {!suricataLoading && !suricataError && suricataTotal > 0 && (
+                    <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+                      <span className="text-sm text-slate-400">Total: {suricataTotal} alertas</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm"
+                          disabled={suricataPage === 0 || suricataLoading}
+                          onClick={() => setSuricataPage((p) => Math.max(0, p - 1))}
+                        >
+                          Anterior
+                        </button>
+                        <span className="text-sm text-slate-300">
+                          Página {suricataPage + 1} de {Math.max(1, Math.ceil(suricataTotal / INCIDENTS_PAGE_SIZE))}
+                        </span>
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm"
+                          disabled={suricataPage >= Math.ceil(suricataTotal / INCIDENTS_PAGE_SIZE) - 1 || suricataLoading}
+                          onClick={() => setSuricataPage((p) => p + 1)}
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+
+              {/* Visualização do Snort */}
+              {incidentView === "snort" && (
+                <>
+                  <div className="bg-slate-800 border border-slate-700 rounded-lg p-4 mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="text-slate-300 font-medium">Alertas do Snort</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-400">
+                        <div className={`w-2 h-2 rounded-full ${snortLoading ? "bg-yellow-500 animate-pulse" : "bg-green-500"}`}></div>
+                        <span>{snortLoading ? "Conectando..." : "Stream ativo (SSE)"}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2">
+                        <label className="text-sm text-slate-400">Filtrar por severidade:</label>
+                        <select
+                          value={snortSeverityFilter}
+                          onChange={(e) => setSnortSeverityFilter(e.target.value)}
+                          className="px-3 py-1.5 rounded-md bg-slate-700 text-slate-200 border border-slate-600 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                          title="Filtrar alertas Snort por severidade"
+                          aria-label="Filtrar alertas Snort por severidade"
+                        >
+                          <option value="all">Todas</option>
+                          <option value="critical">Crítica</option>
+                          <option value="high">Alta</option>
+                          <option value="medium">Média</option>
+                          <option value="low">Baixa</option>
+                        </select>
+                        <span className="text-xs text-slate-500">
+                          ({snortAlerts.filter(alert =>
+                            snortSeverityFilter === "all" ||
+                            alert.severity?.toLowerCase() === snortSeverityFilter.toLowerCase()
+                          ).length} alertas)
+                        </span>
+                      </div>
+                      <button
+                        className="px-4 py-2 rounded-md bg-green-600 hover:bg-green-700 disabled:opacity-50 text-sm"
+                        onClick={() => { setSnortPage(0); fetchSnortAlertsFromDb(false, 0); }}
+                        disabled={snortLoading}
+                      >
+                        Atualizar
+                      </button>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto rounded-lg border border-slate-700">
+                    <table className="w-full text-left">
+                      <thead className="bg-slate-800">
+                        <tr>
+                          <th className="px-4 py-3">Timestamp</th>
+                          <th className="px-4 py-3">Assinatura</th>
+                          <th className="px-4 py-3">Severidade</th>
+                          <th className="px-4 py-3">IP Origem</th>
+                          <th className="px-4 py-3">IP Destino</th>
+                          <th className="px-4 py-3">Protocolo</th>
+                          <th className="px-4 py-3">Categoria</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {snortLoading && (
+                          <tr>
+                            <td className="px-4 py-3 text-center" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <div className="w-4 h-4 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                                Conectando ao Snort...
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {snortError && (
+                          <tr>
+                            <td className="px-4 py-3 text-center text-rose-400" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <span>⚠️</span>
+                                {snortError}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {!snortLoading && !snortError && snortAlerts.length === 0 && (
+                          <tr>
+                            <td className="px-4 py-3 text-center text-slate-400" colSpan={7}>
+                              <div className="flex items-center justify-center gap-2">
+                                <span>📋</span>
+                                Aguardando alertas do Snort...
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        {!snortLoading && !snortError && snortAlerts.length > 0 &&
+                          snortAlerts.filter(alert =>
+                            snortSeverityFilter === "all" ||
+                            alert.severity?.toLowerCase() === snortSeverityFilter.toLowerCase()
+                          ).length === 0 && (
+                            <tr>
+                              <td className="px-4 py-3 text-center text-slate-400" colSpan={7}>
+                                <span>🔍</span> Nenhum alerta encontrado com severidade "{snortSeverityFilter}"
+                              </td>
+                            </tr>
+                        )}
+                        {!snortLoading && !snortError && snortAlerts
+                          .filter(alert =>
+                            snortSeverityFilter === "all" ||
+                            alert.severity?.toLowerCase() === snortSeverityFilter.toLowerCase()
+                          )
+                          .map((alert, index) => {
+                            const getSnortSeverityColor = (severity: string) => {
+                              switch (severity?.toLowerCase()) {
+                                case "critical": return "bg-red-500/20 text-red-400 border border-red-500/30";
+                                case "high": return "bg-orange-500/20 text-orange-400 border border-orange-500/30";
+                                case "medium": return "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30";
+                                case "low": return "bg-green-500/20 text-green-400 border border-green-500/30";
+                                default: return "bg-slate-500/20 text-slate-400 border border-slate-500/30";
+                              }
+                            };
+                            const formatSnortTs = (timestamp: string) => {
+                              if (!timestamp) return "-";
+                              try {
+                                const date = new Date(timestamp);
+                                return date.toLocaleString("pt-BR", {
+                                  day: "2-digit", month: "2-digit", year: "numeric",
+                                  hour: "2-digit", minute: "2-digit", second: "2-digit"
+                                });
+                              } catch { return timestamp; }
+                            };
+                            const fullSigSnort = alert.signature || alert.message || "";
+                            const tooltipSnort = [fullSigSnort, alert.signature_id && alert.signature_id !== "**" ? `SID: ${alert.signature_id}` : ""].filter(Boolean).join("\n");
+                            return (
+                              <tr key={index} className="border-b border-slate-700 hover:bg-slate-800/50 transition-colors">
+                                <td className="px-4 py-3 text-sm text-slate-300">{formatSnortTs(alert.timestamp)}</td>
+                                <td className="px-4 py-3">
+                                  <div className="text-sm text-slate-200 max-w-xs" title={tooltipSnort}>
+                                    {getFriendlySignatureLabel(fullSigSnort, alert.category)}
+                                  </div>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-semibold ${getSnortSeverityColor(alert.severity)}`}>
+                                    {alert.severity?.toUpperCase() || "UNKNOWN"}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-sm font-mono text-slate-300">{alert.src_ip || "-"}</span>
+                                  {alert.src_port && <span className="text-xs text-slate-500">:{alert.src_port}</span>}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="text-sm font-mono text-slate-300">{alert.dest_ip || "-"}</span>
+                                  {alert.dest_port && <span className="text-xs text-slate-500">:{alert.dest_port}</span>}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="inline-flex items-center px-2 py-1 rounded bg-slate-700/50 text-slate-300 text-xs font-medium">{alert.protocol || "-"}</span>
+                                </td>
+                                <td className="px-4 py-3 text-sm text-slate-400">{alert.category || "-"}</td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Paginação Snort */}
+                  {!snortLoading && !snortError && snortTotal > 0 && (
+                    <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+                      <span className="text-sm text-slate-400">Total: {snortTotal} alertas</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm"
+                          disabled={snortPage === 0 || snortLoading}
+                          onClick={() => setSnortPage((p) => Math.max(0, p - 1))}
+                        >
+                          Anterior
+                        </button>
+                        <span className="text-sm text-slate-300">
+                          Página {snortPage + 1} de {Math.max(1, Math.ceil(snortTotal / INCIDENTS_PAGE_SIZE))}
+                        </span>
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 rounded-md bg-slate-700 hover:bg-slate-600 disabled:opacity-50 text-sm"
+                          disabled={snortPage >= Math.ceil(snortTotal / INCIDENTS_PAGE_SIZE) - 1 || snortLoading}
+                          onClick={() => setSnortPage((p) => p + 1)}
+                        >
+                          Próxima
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -3371,6 +4873,181 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Tab content: Minha Rede - Apenas para ADMIN ou MANAGER (não SUPERUSER) com rede atribuída */}
+          {permission !== "SUPERUSER" && (permission === "ADMIN" || permission === "MANAGER") && institutionId && activeTab === "my-network" && (
+            <div>
+              <div className="bg-white rounded-lg shadow-sm border p-6">
+                <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                  🌐 Minha Rede
+                </h2>
+                
+                {loadingInstitution ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <p className="ml-3 text-gray-600">Carregando dados da rede...</p>
+                  </div>
+                ) : myInstitution ? (
+                  editMode ? (
+                    <InstitutionEditForm
+                      institution={myInstitution}
+                      onSave={handleInstitutionSave}
+                      onCancel={handleInstitutionCancel}
+                    />
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center mb-4">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-900">{myInstitution.nome}</h3>
+                          <p className="text-gray-600">{myInstitution.cidade}</p>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => myInstitution && checkServiceStatus(myInstitution)}
+                            className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors text-sm"
+                            title="Atualizar status dos serviços"
+                          >
+                            🔄 Atualizar Status
+                          </button>
+                          <button
+                            onClick={() => setEditMode(true)}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition-colors"
+                          >
+                            Editar Rede
+                          </button>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">Nome</label>
+                          <p className="text-gray-900">{myInstitution.nome}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">Cidade</label>
+                          <p className="text-gray-900">{myInstitution.cidade}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">URL Base pfSense</label>
+                          <div className="flex items-center gap-2">
+                            <p className="text-gray-900 break-all flex-1">{myInstitution.pfsense_base_url}</p>
+                            {pfsenseStatus && (
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                pfsenseStatus === "online" 
+                                  ? "bg-green-100 text-green-800" 
+                                  : pfsenseStatus === "checking"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}>
+                                {pfsenseStatus === "checking" && (
+                                  <span className="animate-spin mr-1">⏳</span>
+                                )}
+                                {pfsenseStatus === "online" && "🟢 Online"}
+                                {pfsenseStatus === "offline" && "🔴 Offline"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">URL Base Zeek</label>
+                          <div className="flex items-center gap-2">
+                            <p className="text-gray-900 break-all flex-1">{myInstitution.zeek_base_url}</p>
+                            {zeekStatus && (
+                              <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                zeekStatus === "online" 
+                                  ? "bg-green-100 text-green-800" 
+                                  : zeekStatus === "checking"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}>
+                                {zeekStatus === "checking" && (
+                                  <span className="animate-spin mr-1">⏳</span>
+                                )}
+                                {zeekStatus === "online" && "🟢 Online"}
+                                {zeekStatus === "offline" && "🔴 Offline"}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        {myInstitution.suricata_base_url && (
+                          <div>
+                            <label className="text-sm font-medium text-gray-500">URL Base Suricata</label>
+                            <div className="flex items-center gap-2">
+                              <p className="text-gray-900 break-all flex-1">{myInstitution.suricata_base_url}</p>
+                              {suricataStatus ? (
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  suricataStatus === "online"
+                                    ? "bg-green-100 text-green-800"
+                                    : suricataStatus === "checking"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : "bg-red-100 text-red-800"
+                                }`}>
+                                  {suricataStatus === "checking" && (
+                                    <span className="animate-spin mr-1">⏳</span>
+                                  )}
+                                  {suricataStatus === "online" && "🟢 Online"}
+                                  {suricataStatus === "offline" && "🔴 Offline"}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                  Não verificado
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        {myInstitution.snort_base_url && (
+                          <div>
+                            <label className="text-sm font-medium text-gray-500">URL Base Snort</label>
+                            <div className="flex items-center gap-2">
+                              <p className="text-gray-900 break-all flex-1">{myInstitution.snort_base_url}</p>
+                              {snortStatus ? (
+                                <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                                  snortStatus === "online"
+                                    ? "bg-green-100 text-green-800"
+                                    : snortStatus === "checking"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : "bg-red-100 text-red-800"
+                                }`}>
+                                  {snortStatus === "checking" && (
+                                    <span className="animate-spin mr-1">⏳</span>
+                                  )}
+                                  {snortStatus === "online" && "🟢 Online"}
+                                  {snortStatus === "offline" && "🔴 Offline"}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">
+                                  Não verificado
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">IP Inicial</label>
+                          <p className="text-gray-900">{myInstitution.ip_range_start}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">IP Final</label>
+                          <p className="text-gray-900">{myInstitution.ip_range_end}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-500">Status</label>
+                          <p className={`inline-block px-2 py-1 rounded text-sm ${myInstitution.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                            {myInstitution.is_active ? 'Ativa' : 'Inativa'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                ) : (
+                  <div className="py-8">
+                    <p className="text-gray-600">Não foi possível carregar os dados da rede atribuída.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
 
@@ -3385,3 +5062,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

@@ -33,12 +33,12 @@ services:
     depends_on:
       - db
     restart: unless-stopped
- 
+
   frontend:
     build: ./frontend
     env_file: backend/.env
     ports:
-      - "3000:3000"  # Isso é ESSENCIAL    
+      - "3000:3000"  # Isso é ESSENCIAL
     networks:
       vm-bridge:
         ipv4_address: 172.20.0.30
@@ -46,12 +46,38 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - backend
-      
+
     restart: unless-stopped
 
-    
-  zeek-monitor:  
-    build: ./SIMIR_real
+  ataque:
+    build: ./teste_ataque
+    env_file: backend/.env
+
+    networks:
+      vm-bridge:
+        ipv4_address: 172.20.0.50
+    extra_hosts:  # Add this to frontend too if it needs to access host
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
+      - server_alvo
+      - zeek-monitor
+
+  server_alvo:
+    build: ./target-server
+    logging:
+      driver: none
+    env_file: backend/.env
+    networks:
+      vm-bridge:
+        ipv4_address: 172.20.0.60
+    extra_hosts:  # Add this to frontend too if it needs to access host
+      - "host.docker.internal:host-gateway"
+
+
+    restart: unless-stopped
+  zeek-monitor:
+    build: ./zeek-docker
     network_mode: host
     privileged: true
     environment:
@@ -59,21 +85,13 @@ services:
     cap_add:
       - NET_RAW
       - NET_ADMIN
+    volumes:
+      - ./logs:/usr/local/zeek/spool/zeek
+      - ./site:/usr/local/zeek/share/zeek/site
+      - /etc/localtime:/etc/localtime:ro
     restart: unless-stopped
 
 
 
-  ataque:
-      build: ./Docker_ataque
-      env_file: backend/.env
-      networks:
-        vm-bridge:
-          ipv4_address: 172.20.0.60
-      extra_hosts:  # Add this to frontend too if it needs to access host
-        - "host.docker.internal:host-gateway"
-      depends_on:
-        - backend
-        - zeek-monitor
-      restart: unless-stopped
-      
+
 

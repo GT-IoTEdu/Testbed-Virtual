@@ -111,12 +111,13 @@ class DhcpService:
         # Usar a mesma lógica do _save_static_mapping para consistência
         return self._save_static_mapping(server_id, mapping_data)
     
-    def save_dhcp_data(self, dhcp_data: Dict[str, Any]) -> Dict[str, Any]:
+    def save_dhcp_data(self, dhcp_data: Dict[str, Any], institution_id: Optional[int] = None) -> Dict[str, Any]:
         """
         Salva dados de DHCP do pfSense no banco de dados.
         
         Args:
             dhcp_data: Dados retornados pela API do pfSense
+            institution_id: ID da instituição/campus (opcional)
             
         Returns:
             Dict com estatísticas da operação
@@ -134,7 +135,7 @@ class DhcpService:
                 # Salvar mapeamentos estáticos
                 static_maps = server_data.get('staticmap', [])
                 for mapping_data in static_maps:
-                    result = self._save_static_mapping(server.id, mapping_data)
+                    result = self._save_static_mapping(server.id, mapping_data, institution_id=institution_id)
                     if result['action'] == 'created':
                         mappings_saved += 1
                     elif result['action'] == 'updated':
@@ -189,7 +190,7 @@ class DhcpService:
         self.db.flush()  # Para obter o ID
         return server
     
-    def _save_static_mapping(self, server_id: int, mapping_data: Dict[str, Any]) -> Dict[str, str]:
+    def _save_static_mapping(self, server_id: int, mapping_data: Dict[str, Any], institution_id: Optional[int] = None) -> Dict[str, str]:
         """Salva ou atualiza um mapeamento estático DHCP."""
         mac = mapping_data.get('mac')
         ipaddr = mapping_data.get('ipaddr')
@@ -212,9 +213,11 @@ class DhcpService:
             existing_mapping.cid = mapping_data.get('cid')
             existing_mapping.hostname = mapping_data.get('hostname')
             existing_mapping.descr = mapping_data.get('descr')
+            if institution_id:
+                existing_mapping.institution_id = institution_id
             existing_mapping.updated_at = datetime.now()
             action = 'updated'
-            logger.info(f"Atualizando mapeamento existente: MAC={mac}, IP={ipaddr}, pf_id={pf_id}")
+            logger.info(f"Atualizando mapeamento existente: MAC={mac}, IP={ipaddr}, pf_id={pf_id}, institution_id={institution_id}")
             mapping = existing_mapping
         else:
             # Criar novo mapeamento
@@ -225,11 +228,12 @@ class DhcpService:
                 ipaddr=ipaddr,
                 cid=mapping_data.get('cid'),
                 hostname=mapping_data.get('hostname'),
-                descr=mapping_data.get('descr')
+                descr=mapping_data.get('descr'),
+                institution_id=institution_id
             )
             self.db.add(mapping)
             action = 'created'
-            logger.info(f"Criando novo mapeamento: MAC={mac}, IP={ipaddr}, pf_id={pf_id}")
+            logger.info(f"Criando novo mapeamento: MAC={mac}, IP={ipaddr}, pf_id={pf_id}, institution_id={institution_id}")
         
         return {'action': action, 'mapping': mapping}
     
@@ -251,34 +255,55 @@ class DhcpService:
             DhcpStaticMapping.descr.contains(descr)
         ).all()
     
-    def get_all_devices(self) -> List[DhcpStaticMapping]:
-        """Retorna todos os dispositivos cadastrados."""
-        return self.db.query(DhcpStaticMapping).all()
+    def get_all_devices(self, institution_id: Optional[int] = None) -> List[DhcpStaticMapping]:
+        """
+        Retorna todos os dispositivos cadastrados.
+        
+        Args:
+            institution_id: Se fornecido, filtra apenas dispositivos desta instituição
+        """
+        query = self.db.query(DhcpStaticMapping)
+        if institution_id is not None:
+            query = query.filter(DhcpStaticMapping.institution_id == institution_id)
+        return query.all()
     
-    def get_devices_by_server(self, server_id: str) -> List[DhcpStaticMapping]:
-        """Retorna dispositivos de um servidor específico."""
-        return self.db.query(DhcpStaticMapping).join(DhcpServer).filter(
+    def get_devices_by_server(self, server_id: str, institution_id: Optional[int] = None) -> List[DhcpStaticMapping]:
+        """
+        Retorna dispositivos de um servidor específico.
+        
+        Args:
+            server_id: ID do servidor DHCP
+            institution_id: Se fornecido, filtra apenas dispositivos desta instituição
+        """
+        query = self.db.query(DhcpStaticMapping).join(DhcpServer).filter(
             DhcpServer.server_id == server_id
-        ).all()
+        )
+        if institution_id is not None:
+            query = query.filter(DhcpStaticMapping.institution_id == institution_id)
+        return query.all()
     
-    def search_devices(self, query: str) -> List[DhcpStaticMapping]:
+    def search_devices(self, query: str, institution_id: Optional[int] = None) -> List[DhcpStaticMapping]:
         """
         Busca dispositivos por IP, MAC ou descrição.
         
         Args:
             query: Termo de busca
+            institution_id: Se fornecido, filtra apenas dispositivos desta instituição
             
         Returns:
             Lista de dispositivos encontrados
         """
-        return self.db.query(DhcpStaticMapping).filter(
+        db_query = self.db.query(DhcpStaticMapping).filter(
             or_(
                 DhcpStaticMapping.ipaddr.contains(query),
                 DhcpStaticMapping.mac.contains(query),
                 DhcpStaticMapping.descr.contains(query),
                 DhcpStaticMapping.hostname.contains(query)
             )
-        ).all()
+        )
+        if institution_id is not None:
+            db_query = db_query.filter(DhcpStaticMapping.institution_id == institution_id)
+        return db_query.all()
     
     def get_device_statistics(self) -> Dict[str, Any]:
         """Retorna estatísticas dos dispositivos cadastrados."""

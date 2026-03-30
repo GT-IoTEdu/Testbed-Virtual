@@ -1,0 +1,146 @@
+====================================================================================================
+LOG DE TESTE - SISTEMA DE DETECÇÃO E BLOQUEIO AUTOMÁTICO
+====================================================================================================
+
+
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 12:05:51.596
+TIPO: DETECTION
+DESCRIÇÃO: Incidente detectado: SQL Injection - Atacante
+INCIDENTE ID: 149
+IP DO DISPOSITIVO: 192.168.59.4
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 2.10%
+  Memória RAM (Processo): 60.89 MB (0.19%)
+  Memória RAM (Sistema): 55.80% usado (14366 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T12:05:13
+  incident_type: SQL Injection - Atacante
+  saved_at: 2025-11-05T12:05:51.596946
+  time_since_detection_seconds: 38.596946
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 12:05:51.816
+TIPO: DETECTION
+DESCRIÇÃO: Incidente detectado: SQL Injection - Vítima
+INCIDENTE ID: 150
+IP DO DISPOSITIVO: 192.168.59.2
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 11.10%
+  Memória RAM (Processo): 60.91 MB (0.19%)
+  Memória RAM (Sistema): 55.80% usado (14367 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T12:05:13
+  incident_type: SQL Injection - Vítima
+  saved_at: 2025-11-05T12:05:51.816778
+  time_since_detection_seconds: 38.816778
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 12:05:52.327
+TIPO: BLOCKING_START
+DESCRIÇÃO: Iniciando bloqueio automático para IP 192.168.59.4
+INCIDENTE ID: 149
+IP DO DISPOSITIVO: 192.168.59.4
+ENDPOINT: IncidentService._apply_auto_block
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 3.90%
+  Memória RAM (Processo): 61.10 MB (0.19%)
+  Memória RAM (Sistema): 55.80% usado (14376 MB disponíveis de 32497 MB)
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 12:05:52.713
+TIPO: SYNC
+DESCRIÇÃO: Sincronização com pfSense: ALIAS_UPDATE - Sucesso
+DURAÇÃO: 0.165s (0s 165ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 16.80%
+  CPU (Sistema): 2.00%
+  Memória RAM (Processo): 61.46 MB (0.19%)
+  Memória RAM (Sistema): 55.80% usado (14376 MB disponíveis de 32497 MB)
+
+METADADOS:
+  sync_type: ALIAS_UPDATE
+  success: True
+  alias_id: 0
+  alias_name: Autorizados
+  endpoint: pfsense_client.atualizar_alias_pfsense
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 12:05:53.191
+TIPO: SYNC
+DESCRIÇÃO: Sincronização com pfSense: ALIAS_UPDATE - Sucesso
+DURAÇÃO: 0.110s (0s 110ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 16.40%
+  Memória RAM (Processo): 61.63 MB (0.19%)
+  Memória RAM (Sistema): 55.80% usado (14377 MB disponíveis de 32497 MB)
+
+METADADOS:
+  sync_type: ALIAS_UPDATE
+  success: True
+  alias_id: 1
+  alias_name: Bloqueados
+  endpoint: pfsense_client.atualizar_alias_pfsense
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 12:05:53.524
+TIPO: BLOCKING
+DESCRIÇÃO: Dispositivo bloqueado automaticamente
+INCIDENTE ID: 149
+IP DO DISPOSITIVO: 192.168.59.4
+ENDPOINT: IncidentService._apply_auto_block
+DURAÇÃO: 0.673s (0s 672ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 48.20%
+  Memória RAM (Processo): 61.95 MB (0.19%)
+  Memória RAM (Sistema): 55.80% usado (14374 MB disponíveis de 32497 MB)
+
+METADADOS:
+  blocked_at: 2025-11-05T12:05:53
+  feedback_id: 30
+  ttb_seconds: 40.0
+  detected_at: 2025-11-05T12:05:13
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 12:05:53.728
+TIPO: TIMING_SUMMARY
+DESCRIÇÃO: Resumo de tempos - TtB: 40s
+INCIDENTE ID: 149
+IP DO DISPOSITIVO: 192.168.59.4
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 24.00%
+  Memória RAM (Processo): 61.95 MB (0.19%)
+  Memória RAM (Sistema): 55.80% usado (14370 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T12:05:13
+  blocked_at: 2025-11-05T12:05:53
+  ttb_seconds: 40.0
+  ttb_readable: 40s
+====================================================================================================
+
+====================================================================================================
+

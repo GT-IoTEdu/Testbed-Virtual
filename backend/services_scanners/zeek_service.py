@@ -1,619 +1,233 @@
 """
-Serviço para integração com Zeek Network Security Monitor
+Serviço para integração com Zeek NSM (Network Security Monitor)
+Conecta-se ao endpoint SSE do Zeek para receber alertas em tempo real (mesmo estilo Suricata/Snort).
 """
 import json
 import logging
+import re
 import requests
-from typing import List, Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
-from urllib.parse import urlencode
-import config
-
-from .zeek_models import (
-    ZeekLogType, ZeekSeverity, ZeekIncidentStatus, ZeekIncident,
-    ZeekLogRequest, ZeekLogResponse, ZeekHttpLog, ZeekDnsLog, ZeekConnLog
-)
-from .incident_service import IncidentService
+from datetime import datetime
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 
 class ZeekService:
-    """Serviço para comunicação com API do Zeek"""
-    
-    def __init__(self, zeek_api_base_url: Optional[str] = None, api_token: Optional[str] = None):
-        """
-        Inicializa o serviço Zeek
-        
-        Args:
-            zeek_api_base_url: URL base da API do Zeek (usa config se não especificado)
-            api_token: Token de autenticação (usa config se não especificado)
-        """
-        self.base_url = (zeek_api_base_url or config.ZEEK_API_URL or "http://192.168.100.1/zeek-api").rstrip('/')
-        self.api_token = api_token or config.ZEEK_API_TOKEN
+    """Serviço para comunicação com API do Zeek via SSE."""
+
+    def __init__(
+        self,
+        zeek_base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        user_id: Optional[int] = None,
+        institution_id: Optional[int] = None,
+    ):
+        if zeek_base_url and api_key:
+            self.base_url = zeek_base_url.rstrip("/")
+            self.api_key = api_key
+            logger.info(f"🔧 Zeek Service configurado com parâmetros diretos - URL: {self.base_url}")
+        else:
+            institution_config = self._get_institution_config(user_id, institution_id)
+            if institution_config:
+                zeek_base_url_raw = institution_config.get("zeek_base_url")
+                zeek_key_raw = institution_config.get("zeek_key")
+                zeek_base_url = zeek_base_url_raw.strip() if zeek_base_url_raw and isinstance(zeek_base_url_raw, str) else None
+                zeek_key = zeek_key_raw.strip() if zeek_key_raw and isinstance(zeek_key_raw, str) else None
+                if zeek_base_url and zeek_key:
+                    self.base_url = zeek_base_url.rstrip("/")
+                    self.api_key = zeek_key
+                    logger.info(f"✅ Zeek Service configurado do banco (institution_id={institution_config.get('institution_id')}) - URL: {self.base_url}")
+                else:
+                    self.base_url = None
+                    self.api_key = None
+            else:
+                self.base_url = None
+                self.api_key = None
         self.timeout = 30
-        self.incident_service = IncidentService()
-        
-        if not self.api_token:
-            logger.warning("Token de autenticação do Zeek não configurado. Configure ZEEK_API_TOKEN no .env")
-        
-    def get_logs(self, request: ZeekLogRequest) -> ZeekLogResponse:
-        """
-        Busca logs do Zeek
-        
-        Args:
-            request: Parâmetros da requisição
-            
-        Returns:
-            Resposta com os logs e incidentes detectados
-        """
+
+    def _get_institution_config(
+        self, user_id: Optional[int] = None, institution_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
         try:
-            # Verifica se o token está configurado
-            if not self.api_token:
-                return ZeekLogResponse(
-                    success=False,
-                    message="Token de autenticação não configurado",
-                    log_type=request.logfile,
-                    total_lines=0,
-                    logs=[],
-                    incidents=[]
-                )
-            
-            # Monta os parâmetros da URL
-            params = {
-                'logfile': request.logfile.value,
-                'maxlines': request.maxlines
-            }
-            
-            # Configura headers de autenticação
-            headers = {
-                'Authorization': f'Bearer {self.api_token}',
-                'Content-Type': 'application/json'
-            }
-            
-            # Faz a requisição para a API do Zeek
-            url = f"{self.base_url}/alert_data.php"
-            logger.info(f"Fazendo requisição para Zeek API: {url} com params: {params}")
-            
-            response = requests.get(url, params=params, headers=headers, timeout=self.timeout)
-            response.raise_for_status()
-            
-            # Processa a resposta JSON
-            try:
-                json_data = response.json()
-            except json.JSONDecodeError as e:
-                logger.error(f"Erro ao decodificar JSON da resposta Zeek: {e}")
-                return ZeekLogResponse(
-                    success=False,
-                    message=f"Erro ao decodificar resposta JSON: {str(e)}",
-                    log_type=request.logfile,
-                    total_lines=0,
-                    logs=[],
-                    incidents=[]
-                )
-            
-            # Verifica se a API retornou erro
-            if not json_data.get('success', False):
-                error_msg = json_data.get('error', 'Erro desconhecido da API Zeek')
-                return ZeekLogResponse(
-                    success=False,
-                    message=error_msg,
-                    log_type=request.logfile,
-                    total_lines=0,
-                    logs=[],
-                    incidents=[]
-                )
-            
-            # Extrai os dados dos logs
-            logs = json_data.get('data', [])
-            
-            # Filtra por IP se especificado
-            if request.filter_ip:
-                logs = self._filter_logs_by_ip(logs, request.filter_ip)
-            
-            # Filtra por tempo se especificado
-            if request.start_time or request.end_time:
-                logs = self._filter_logs_by_time(logs, request.start_time, request.end_time)
-            
-            # Analisa logs para detectar incidentes
-            incidents = self._analyze_logs_for_incidents(logs, request.logfile)
-            
-            return ZeekLogResponse(
-                success=True,
-                message=f"Logs recuperados com sucesso ({len(logs)} registros)",
-                log_type=request.logfile,
-                total_lines=len(logs),
-                logs=logs,
-                incidents=incidents
-            )
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Erro ao buscar logs do Zeek: {e}")
-            return ZeekLogResponse(
-                success=False,
-                message=f"Erro de comunicação com Zeek API: {str(e)}",
-                log_type=request.logfile,
-                total_lines=0,
-                logs=[],
-                incidents=[]
-            )
+            from services_firewalls.institution_config_service import InstitutionConfigService
+            if user_id:
+                return InstitutionConfigService.get_user_institution_config(user_id=user_id)
+            if institution_id:
+                return InstitutionConfigService.get_institution_config(institution_id)
+            return None
         except Exception as e:
-            logger.error(f"Erro inesperado ao processar logs do Zeek: {e}")
-            return ZeekLogResponse(
-                success=False,
-                message=f"Erro interno: {str(e)}",
-                log_type=request.logfile,
-                total_lines=0,
-                logs=[],
-                incidents=[]
-            )
-    
-    def _normalize_log_fields(self, log: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Normaliza campos do log para formato consistente
-        
-        Args:
-            log: Log bruto da API
-            
-        Returns:
-            Log normalizado
-        """
-        normalized = {}
-        
-        for key, value in log.items():
-            # Normaliza nomes de campos com pontos para underscores
-            normalized_key = key.replace('.', '_')
-            
-            # Processa valores especiais do Zeek
-            if isinstance(value, dict) and 'raw' in value and 'iso' in value:
-                # Campo de tempo com formato especial da API
-                normalized[normalized_key] = value['raw']
-                normalized[f"{normalized_key}_iso"] = value['iso']
-            elif isinstance(value, list):
-                # Arrays (como tags, interfaces, etc.)
-                normalized[normalized_key] = value
-            else:
-                # Valores simples
-                normalized[normalized_key] = value
-                
-        return normalized
-    
-    def _filter_logs_by_ip(self, logs: List[Dict[str, Any]], filter_ip: str) -> List[Dict[str, Any]]:
-        """
-        Filtra logs por IP
-        
-        Args:
-            logs: Lista de logs
-            filter_ip: IP para filtrar
-            
-        Returns:
-            Logs filtrados
-        """
-        filtered_logs = []
-        for log in logs:
-            normalized = self._normalize_log_fields(log)
-            
-            # Verifica se o IP está em qualquer campo relevante
-            if (normalized.get('id_orig_h') == filter_ip or 
-                normalized.get('id_resp_h') == filter_ip or
-                str(normalized.get('id_orig_h', '')).startswith(filter_ip) or
-                str(normalized.get('id_resp_h', '')).startswith(filter_ip)):
-                filtered_logs.append(log)
-        return filtered_logs
-    
-    def _filter_logs_by_time(self, logs: List[Dict[str, Any]], 
-                           start_time: Optional[datetime], 
-                           end_time: Optional[datetime]) -> List[Dict[str, Any]]:
-        """
-        Filtra logs por período de tempo
-        
-        Args:
-            logs: Lista de logs
-            start_time: Timestamp inicial
-            end_time: Timestamp final
-            
-        Returns:
-            Logs filtrados
-        """
-        if not start_time and not end_time:
-            return logs
-            
-        filtered_logs = []
-        for log in logs:
-            normalized = self._normalize_log_fields(log)
-            ts = normalized.get('ts')
-            
-            if ts is None:
-                continue
-                
-            try:
-                log_time = datetime.fromtimestamp(float(ts))
-                
-                if start_time and log_time < start_time:
-                    continue
-                if end_time and log_time > end_time:
-                    continue
-                    
-                filtered_logs.append(log)
-            except (ValueError, TypeError):
-                # Se não conseguir converter timestamp, inclui o log
-                filtered_logs.append(log)
-        
-        return filtered_logs
-    
-    def _analyze_logs_for_incidents(self, logs: List[Dict[str, Any]], 
-                                  log_type: ZeekLogType) -> List[ZeekIncident]:
-        """
-        Analisa logs para detectar possíveis incidentes de segurança
-        
-        Args:
-            logs: Lista de logs
-            log_type: Tipo de log
-            
-        Returns:
-            Lista de incidentes detectados
-        """
-        incidents = []
-        
-        for log in logs:
-            normalized = self._normalize_log_fields(log)
-            incident = self._detect_incident_in_log(normalized, log_type)
-            if incident:
-                incidents.append(incident)
-                # Salva automaticamente no banco de dados
-                try:
-                    self._save_incident_to_database(incident, normalized)
-                except Exception as e:
-                    logger.error(f"Erro ao salvar incidente no banco de dados: {e}")
-                    # Continua o processamento mesmo se houver erro ao salvar
-        
-        return incidents
-    
-    def _detect_incident_in_log(self, log: Dict[str, Any], 
-                              log_type: ZeekLogType) -> Optional[ZeekIncident]:
-        """
-        Detecta incidentes em um log específico
-        
-        Args:
-            log: Dados do log
-            log_type: Tipo de log
-            
-        Returns:
-            Incidente detectado ou None
-        """
-        if log_type == ZeekLogType.HTTP:
-            return self._detect_http_incident(log)
-        elif log_type == ZeekLogType.DNS:
-            return self._detect_dns_incident(log)
-        elif log_type == ZeekLogType.CONN:
-            return self._detect_conn_incident(log)
-        elif log_type == ZeekLogType.NOTICE:
-            return self._detect_notice_incident(log)
-        
-        return None
-    
-    def _detect_http_incident(self, log: Dict[str, Any]) -> Optional[ZeekIncident]:
-        """
-        Detecta incidentes em logs HTTP
-        
-        Args:
-            log: Log HTTP
-            
-        Returns:
-            Incidente ou None
-        """
-        incident_type = None
-        severity = None
-        description = None
-        
-        # Verifica códigos de status suspeitos
-        status_code = log.get('status_code')
-        if status_code:
-            if status_code >= 400:
-                severity = ZeekSeverity.MEDIUM if status_code < 500 else ZeekSeverity.HIGH
-                incident_type = f"HTTP Error {status_code}"
-                description = f"Erro HTTP {status_code}: {log.get('status_msg', 'Unknown error')}"
-            elif status_code in [301, 302, 303, 307, 308]:
-                severity = ZeekSeverity.LOW
-                incident_type = "HTTP Redirect"
-                description = f"Redirecionamento HTTP {status_code} para {log.get('host', 'unknown host')}"
-        
-        # Verifica user agents suspeitos (mesmo sem status_code)
-        user_agent = log.get('user_agent', '')
-        if user_agent and not incident_type:
-            suspicious_agents = ['curl', 'wget', 'python-requests', 'scanner', 'bot', 'sqlmap', 'nikto']
-            if any(agent.lower() in user_agent.lower() for agent in suspicious_agents):
-                severity = ZeekSeverity.MEDIUM
-                incident_type = "Suspicious User Agent"
-                description = f"User agent suspeito detectado: {user_agent}"
-        
-        # Verifica URIs suspeitas (mesmo sem status_code)
-        uri = log.get('uri', '')
-        if uri and not incident_type:
-            suspicious_patterns = ['/admin', '/.env', '/wp-admin', '/phpmyadmin', '../', '/api/', '/config']
-            if any(pattern in uri.lower() for pattern in suspicious_patterns):
-                severity = ZeekSeverity.MEDIUM
-                incident_type = "Suspicious URI Access"
-                description = f"Acesso a URI suspeita: {uri}"
-        
-        # Verifica métodos HTTP suspeitos
-        method = log.get('method', '')
-        if method and not incident_type:
-            if method.upper() in ['PUT', 'DELETE', 'PATCH', 'TRACE', 'OPTIONS']:
-                severity = ZeekSeverity.LOW
-                incident_type = f"Unusual HTTP Method"
-                description = f"Método HTTP incomum detectado: {method}"
-        
-        # Verifica tamanho de requisição suspeito
-        request_body_len = log.get('request_body_len', 0) or 0
-        if request_body_len > 10000 and not incident_type:  # > 10KB
-            severity = ZeekSeverity.LOW
-            incident_type = "Large HTTP Request"
-            description = f"Requisição HTTP grande detectada: {request_body_len} bytes"
-        
-        if incident_type:
-            ts = log.get('ts')
-            if isinstance(ts, dict) and 'raw' in ts:
-                ts = ts['raw']
-            elif ts is None:
-                ts = datetime.now().timestamp()
-                
-            device_ip = log.get('id_orig_h', 'unknown')
-            
-            return ZeekIncident(
-                device_ip=device_ip,
-                incident_type=incident_type,
-                severity=severity,
-                description=description,
-                detected_at=datetime.fromtimestamp(float(ts)) if isinstance(ts, (int, float)) else datetime.now(),
-                status=ZeekIncidentStatus.NEW,
-                raw_log_data=log,
-                zeek_log_type=ZeekLogType.HTTP
-            )
-        
-        return None
-    
-    def _detect_dns_incident(self, log: Dict[str, Any]) -> Optional[ZeekIncident]:
-        """
-        Detecta incidentes em logs DNS
-        
-        Args:
-            log: Log DNS
-            
-        Returns:
-            Incidente ou None
-        """
-        query = log.get('query', '').lower()
-        if not query:
+            logger.error(f"Erro ao buscar configurações da instituição: {e}", exc_info=True)
             return None
-        
-        # Domínios suspeitos
-        suspicious_domains = [
-            'malware.com', 'phishing.net', 'suspicious.org',
-            # Adicione mais domínios conhecidamente maliciosos
-        ]
-        
-        # Verifica DGA (Domain Generation Algorithm) patterns
-        if len(query) > 20 and query.count('.') > 3:
-            severity = ZeekSeverity.MEDIUM
-            incident_type = "Possible DGA Domain"
-            description = f"Possível domínio gerado algoritmicamente: {query}"
-        elif any(domain in query for domain in suspicious_domains):
-            severity = ZeekSeverity.HIGH
-            incident_type = "Malicious Domain Query"
-            description = f"Query para domínio malicioso: {query}"
-        else:
+
+    def get_sse_url(self) -> Optional[str]:
+        """Retorna a URL do endpoint SSE do Zeek (IDS API: /sse/zeek)."""
+        if not self.base_url or not self.api_key:
             return None
-        
-        ts = log.get('ts', datetime.now().timestamp())
-        device_ip = log.get('id_orig_h', 'unknown')
-        
-        return ZeekIncident(
-            device_ip=device_ip,
-            incident_type=incident_type,
-            severity=severity,
-            description=description,
-            detected_at=datetime.fromtimestamp(ts) if isinstance(ts, (int, float)) else datetime.now(),
-            status=ZeekIncidentStatus.NEW,
-            raw_log_data=log,
-            zeek_log_type=ZeekLogType.DNS
-        )
-    
-    def _detect_conn_incident(self, log: Dict[str, Any]) -> Optional[ZeekIncident]:
-        """
-        Detecta incidentes em logs de conexão
-        
-        Args:
-            log: Log de conexão
-            
-        Returns:
-            Incidente ou None
-        """
-        # Verifica conexões com volumes anômalos de dados
-        orig_bytes = log.get('orig_bytes', 0) or 0
-        resp_bytes = log.get('resp_bytes', 0) or 0
-        total_bytes = orig_bytes + resp_bytes
-        
-        # Limiar para considerar tráfego suspeito (100MB)
-        if total_bytes > 100 * 1024 * 1024:
-            severity = ZeekSeverity.MEDIUM
-            incident_type = "High Volume Traffic"
-            description = f"Alto volume de tráfego detectado: {total_bytes / (1024*1024):.2f} MB"
-        
-        # Verifica conexões falhadas
-        conn_state = log.get('conn_state', '')
-        if conn_state in ['REJ', 'RSTO', 'RSTR']:
-            severity = ZeekSeverity.LOW
-            incident_type = "Connection Failed"
-            description = f"Conexão falhada com estado: {conn_state}"
-        else:
-            return None
-        
-        ts = log.get('ts', datetime.now().timestamp())
-        device_ip = log.get('id_orig_h', 'unknown')
-        
-        return ZeekIncident(
-            device_ip=device_ip,
-            incident_type=incident_type,
-            severity=severity,
-            description=description,
-            detected_at=datetime.fromtimestamp(ts) if isinstance(ts, (int, float)) else datetime.now(),
-            status=ZeekIncidentStatus.NEW,
-            raw_log_data=log,
-            zeek_log_type=ZeekLogType.CONN
-        )
-    
-    def _detect_notice_incident(self, log: Dict[str, Any]) -> Optional[ZeekIncident]:
-        """
-        Detecta incidentes em logs notice (alertas de segurança)
-        
-        Args:
-            log: Log notice
-            
-        Returns:
-            Incidente ou None
-        """
-        note = log.get('note', '')
-        msg = log.get('msg', '')
-        
-        if not note:
-            return None
-        
-        # Determina severidade baseada no tipo de nota
-        severity = ZeekSeverity.MEDIUM  # Padrão
-        incident_type = f"Security Notice: {note}"
-        description = msg or f"Alerta de segurança detectado: {note}"
-        
-        # Ajusta severidade baseada em padrões conhecidos
-        if any(keyword in note.lower() for keyword in ['sql_injection', 'xss', 'malware', 'botnet']):
-            severity = ZeekSeverity.HIGH
-        elif any(keyword in note.lower() for keyword in ['suspicious', 'anomaly', 'scan']):
-            severity = ZeekSeverity.MEDIUM
-        elif any(keyword in note.lower() for keyword in ['info', 'notice']):
-            severity = ZeekSeverity.LOW
-        
-        # Para SQL Injection, classifica como crítico e diferencia atacante/vítima
-        if 'sql_injection' in note.lower():
-            severity = ZeekSeverity.CRITICAL
-            if 'victim' in note.lower():
-                incident_type = "SQL Injection - Vítima"
-                description = f"Vítima de SQL Injection detectada: {msg}"
-            elif 'attacker' in note.lower():
-                incident_type = "SQL Injection - Atacante"
-                description = f"Atacante de SQL Injection detectado: {msg}"
-            else:
-                incident_type = "SQL Injection Attack"
-                description = f"Ataque de SQL Injection detectado: {msg}"
-        
-        ts = log.get('ts')
-        if isinstance(ts, dict) and 'raw' in ts:
-            ts = ts['raw']
-        elif ts is None:
-            ts = datetime.now().timestamp()
-            
-        # Para logs notice, verifica campos específicos que podem conter IPs
-        # No notice.log, os IPs estão em 'src' e 'dst', não em 'id_orig_h' e 'id_resp_h'
-        device_ip = (log.get('src') or 
-                    log.get('id_orig_h') or 
-                    log.get('dst') or 
-                    log.get('id_resp_h') or 
-                    '192.168.100.1')  # IP padrão do pfSense
-        
-        return ZeekIncident(
-            device_ip=device_ip,
-            incident_type=incident_type,
-            severity=severity,
-            description=description,
-            detected_at=datetime.fromtimestamp(float(ts)) if isinstance(ts, (int, float)) else datetime.now(),
-            status=ZeekIncidentStatus.NEW,
-            raw_log_data=log,
-            zeek_log_type=ZeekLogType.NOTICE
-        )
-    
-    def get_available_log_types(self) -> List[str]:
-        """
-        Retorna os tipos de logs disponíveis
-        
-        Returns:
-            Lista de tipos de logs
-        """
-        return [log_type.value for log_type in ZeekLogType]
-    
-    def test_connection(self) -> Tuple[bool, str]:
-        """
-        Testa a conectividade com a API do Zeek
-        
-        Returns:
-            Tupla (sucesso, mensagem)
-        """
-        try:
-            if not self.api_token:
-                return False, "Token de autenticação não configurado"
-                
-            url = f"{self.base_url}/alert_data.php"
-            params = {'logfile': 'http.log', 'maxlines': 1}
-            headers = {
-                'Authorization': f'Bearer {self.api_token}',
-                'Content-Type': 'application/json'
+        return f"{self.base_url}/sse/zeek?api_key={self.api_key}"
+
+    def test_connection(self) -> Dict[str, Any]:
+        if not self.base_url or not self.api_key:
+            return {
+                "success": False,
+                "message": "Zeek não configurado para esta instituição. Configure zeek_base_url e zeek_key no cadastro da instituição.",
+                "configured": False,
             }
-            
-            response = requests.get(url, params=params, headers=headers, timeout=10)
-            
+        try:
+            url = f"{self.base_url}/sse/zeek?api_key={self.api_key}"
+            masked_url = url.replace(self.api_key, "***")
+            logger.info(f"🔍 Testando conexão com Zeek: {masked_url}")
+            response = requests.get(url, timeout=10, stream=True)
             if response.status_code == 200:
-                try:
-                    json_data = response.json()
-                    if json_data.get('success', False):
-                        return True, "Conexão com Zeek API estabelecida com sucesso"
-                    else:
-                        error_msg = json_data.get('error', 'Erro desconhecido')
-                        return False, f"API retornou erro: {error_msg}"
-                except json.JSONDecodeError:
-                    return False, "Resposta da API não é um JSON válido"
-            elif response.status_code == 401:
-                return False, "Token de autenticação inválido"
-            else:
-                return False, f"Erro HTTP {response.status_code}: {response.text[:100]}"
-                
-        except requests.exceptions.ConnectionError:
-            return False, "Não foi possível conectar com a API do Zeek"
-        except requests.exceptions.Timeout:
-            return False, "Timeout na conexão com a API do Zeek"
-        except Exception as e:
-            return False, f"Erro inesperado: {str(e)}"
-    
-    def _save_incident_to_database(self, incident: ZeekIncident, raw_log: Dict[str, Any]):
-        """
-        Salva um incidente detectado no banco de dados MySQL
-        
-        Args:
-            incident: Incidente detectado pelo Zeek
-            raw_log: Log original para armazenar como dados brutos
-        """
-        try:
-            # Converte o modelo Pydantic para o modelo SQLAlchemy
-            incident_data = {
-                'device_ip': incident.device_ip,
-                'device_name': incident.device_name,
-                'incident_type': incident.incident_type,
-                'severity': incident.severity.value.lower(),  # Converte para lowercase
-                'status': incident.status.value.lower(),      # Converte para lowercase
-                'description': incident.description,
-                'detected_at': incident.detected_at,
-                'zeek_log_type': incident.zeek_log_type.value.lower(),  # Converte para lowercase
-                'raw_log_data': json.dumps(raw_log, default=str),
-                'action_taken': incident.action_taken,
-                'assigned_to': None,  # Campo não existe no modelo Pydantic
-                'notes': None         # Campo não existe no modelo Pydantic
+                ct = response.headers.get("Content-Type", "")
+                if "text/event-stream" in ct:
+                    logger.info("✅ Conexão com Zeek estabelecida com sucesso")
+                    return {
+                        "success": True,
+                        "message": "Conexão com Zeek estabelecida com sucesso",
+                        "configured": True,
+                        "url": masked_url,
+                        "server_ip": self.base_url.split("//")[1].split(":")[0] if "//" in self.base_url else "N/A",
+                    }
+                return {
+                    "success": False,
+                    "message": f"Content-Type inesperado: {ct}. Esperado: text/event-stream",
+                    "configured": True,
+                    "url": masked_url,
+                }
+            if response.status_code == 403:
+                return {
+                    "success": False,
+                    "message": "Erro 403: API key inválida ou não autorizada.",
+                    "configured": True,
+                    "url": masked_url,
+                }
+            return {
+                "success": False,
+                "message": f"Erro HTTP {response.status_code}",
+                "configured": True,
+                "url": masked_url,
             }
-            
-            # Cria o incidente no banco de dados
-            created_incident = self.incident_service.save_incident(incident_data)
-            
-            if created_incident:
-                logger.info(f"Incidente salvo no banco de dados - ID: {created_incident.id}, Tipo: {incident.incident_type}, IP: {incident.device_ip}")
-            else:
-                logger.warning(f"Falha ao salvar incidente no banco - Tipo: {incident.incident_type}, IP: {incident.device_ip}")
-                
+        except requests.exceptions.Timeout:
+            return {"success": False, "message": f"Timeout ao conectar com Zeek em {self.base_url}", "configured": True}
+        except requests.exceptions.ConnectionError as e:
+            return {
+                "success": False,
+                "message": f"Erro de conexão com Zeek em {self.base_url}. Verifique se o servidor está acessível.",
+                "configured": True,
+            }
         except Exception as e:
-            logger.error(f"Erro ao salvar incidente no banco de dados: {e}")
-            raise
+            return {"success": False, "message": str(e), "configured": True}
+
+    def _normalize_alert(self, alert: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normaliza um alerta do Zeek para formato padrão (mesmo do Suricata/Snort).
+        Compatível com o payload da IDS SSE API, ex.:
+        {"timestamp": "2026-02-06 17:31:36", "sid": "...", "note": "...", "message": "...",
+         "severity": "HIGH", "protocol": "udp", "src": "192.168.59.1", "dst": "N/A" ou "192.168.59.103", "raw": {...}}
+        """
+        raw_obj = alert.get("raw") or {}
+        src = alert.get("src") or raw_obj.get("src") or ""
+        dst = alert.get("dst") or raw_obj.get("dst") or ""
+        if not src and "id_orig_h" in alert:
+            src = alert.get("id_orig_h", "") or ""
+            if alert.get("id_orig_p") is not None:
+                src = f"{src}:{alert.get('id_orig_p', '')}"
+        if not dst and "id_resp_h" in alert:
+            dst = alert.get("id_resp_h", "") or ""
+            if alert.get("id_resp_p") is not None:
+                dst = f"{dst}:{alert.get('id_resp_p', '')}"
+        src_parts = src.split(":") if src else []
+        dst_parts = dst.split(":") if dst else []
+        src_ip = (src_parts[0] if len(src_parts) > 0 else "") or (alert.get("id_orig_h") or raw_obj.get("src") or "")
+        src_port = src_parts[1] if len(src_parts) > 1 else (str(alert.get("id_orig_p", "") or raw_obj.get("id_orig_p", "")) if (alert.get("id_orig_p") is not None or raw_obj.get("id_orig_p") is not None) else "")
+        dest_ip = (dst_parts[0] if len(dst_parts) > 0 else "") or (alert.get("id_resp_h") or raw_obj.get("dst") or "")
+        dest_port = dst_parts[1] if len(dst_parts) > 1 else (str(alert.get("id_resp_p", "") or raw_obj.get("p", "") or "") if (alert.get("id_resp_p") is not None or raw_obj.get("p") is not None) else "")
+        if not dest_port and isinstance(raw_obj.get("p"), (int, float)):
+            dest_port = str(int(raw_obj["p"]))
+
+        if (dest_ip or "").strip().upper() == "N/A":
+            dest_ip = ""
+        if (src_ip or "").strip().upper() == "N/A":
+            src_ip = ""
+
+        timestamp = alert.get("timestamp", "")
+        if not timestamp:
+            ts = raw_obj.get("ts") or alert.get("ts")
+            if ts is not None:
+                if isinstance(ts, (int, float)):
+                    try:
+                        timestamp = datetime.fromtimestamp(float(ts)).isoformat()
+                    except (ValueError, OSError):
+                        timestamp = datetime.now().isoformat()
+                elif isinstance(ts, dict) and "iso" in ts:
+                    timestamp = ts.get("iso", datetime.now().isoformat())
+        if not timestamp:
+            timestamp = datetime.now().isoformat()
+        try:
+            if isinstance(timestamp, str) and "T" not in timestamp:
+                ts_str = timestamp.strip()[:19]
+                dt = datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+                timestamp = dt.isoformat()
+        except Exception:
+            pass
+
+        message = alert.get("message") or alert.get("msg") or raw_obj.get("msg") or "Alerta do Zeek"
+        signature_id = str(alert.get("signature_id") or alert.get("sid") or "")
+        if (signature_id == "**" or not signature_id) and message:
+            match = re.search(r"\[(\d+):(\d+):(\d+)\]", message)
+            if match:
+                signature_id = match.group(2)
+        category = (alert.get("category") or alert.get("note") or raw_obj.get("note") or "")[:255]
+        protocol = (alert.get("protocol") or raw_obj.get("proto") or "").lower()
+
+        return {
+            "raw": alert,
+            "timestamp": timestamp,
+            "src_ip": src_ip or "N/A",
+            "dest_ip": dest_ip or "N/A",
+            "src_port": src_port,
+            "dest_port": dest_port,
+            "protocol": protocol,
+            "signature_id": signature_id,
+            "signature": message,
+            "category": category,
+            "severity": self._determine_severity(alert),
+            "message": message,
+        }
+
+    def _determine_severity(self, alert: Dict[str, Any]) -> str:
+        """
+        Determina a severidade do alerta.
+        Usa o campo 'severity' da IDS SSE API (INFO, CRITICAL, HIGH, MEDIUM, LOW) quando
+        presente; caso contrário aplica heurísticas por palavras-chave.
+        """
+        api_severity = (alert.get("severity") or "").strip().upper()
+        if api_severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+            return api_severity.lower()
+        if api_severity == "INFO":
+            return "low"
+
+        message = str(alert.get("message", alert.get("msg", ""))).upper()
+        note = str(alert.get("note", "")).upper()
+        text = f"{message} {note}"
+        critical_keywords = [
+            "MALWARE", "EXPLOIT", "TROJAN", "VIRUS", "RANSOMWARE", "BACKDOOR",
+            "COMMAND INJECTION", "CODE INJECTION", "REMOTE CODE EXECUTION", "RCE",
+        ]
+        high_keywords = [
+            "ATTACK", "INTRUSION", "SCAN", "PROBE", "SUSPICIOUS",
+            "SQL INJECTION", "SQLI", "XSS", "PATH TRAVERSAL", "FILE INCLUSION",
+            "LFI", "RFI", "MYSQL", "SQL", "INJECTION", "BENCHMARK COMMAND",
+            "AUTHENTICATION BYPASS", "PRIVILEGE ESCALATION",
+            "BUFFER OVERFLOW", "DENIAL OF SERVICE", "DOS", "DDOS", "FLOOD",
+        ]
+        medium_keywords = ["POLICY", "INFO", "NOTICE", "DNS TUNNELING"]
+        if "SQL" in text and ("INJECTION" in text or "MYSQL" in text or "BENCHMARK" in text):
+            return "high"
+        if any(k in text for k in critical_keywords):
+            return "critical"
+        if any(k in text for k in high_keywords):
+            return "high"
+        if any(k in text for k in medium_keywords):
+            return "medium"
+        return "medium"

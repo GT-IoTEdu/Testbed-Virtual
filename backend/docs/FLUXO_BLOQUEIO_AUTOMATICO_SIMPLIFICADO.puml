@@ -1,0 +1,105 @@
+@startuml Fluxo Simplificado - Bloqueio Automático
+
+!theme plain
+skinparam backgroundColor #FFFFFF
+skinparam defaultFontSize 12
+skinparam roundcorner 15
+skinparam shadowing true
+
+title Fluxo Simplificado - Sistema de Detecção e Bloqueio Automático
+
+|#LightBlue|Zeek Monitor|
+start
+:Monitora logs a cada 3s;
+note right
+  <b>Intervalo: 3 segundos</b>
+end note
+
+|#LightGreen|ZeekService|
+:ZeekService.get_logs();
+note right
+  <b>2.281s</b>
+  CPU: 6.80%
+  RAM: 35.79 MB
+end note
+:Detecta ataque SQL Injection;
+
+|#LightYellow|IncidentService|
+:IncidentService.save_incident();
+note right
+  <b>2.499s</b>
+  CPU: 13.70%
+  RAM: 35.79 MB
+end note
+:Salva no banco de dados;
+:Verifica "Atacante";
+:Inicia Thread Background;
+
+|#LightYellow|IncidentService\n(Background)|
+:IncidentService.process_incidents\n_for_auto_blocking();
+note right
+  <b>3.222s</b>
+  CPU: 16.10%
+  RAM: 35.79 MB
+end note
+:Busca incidentes não processados;
+:Marca como processado;
+:Para cada "Atacante":;
+
+|#LightCoral|AliasService|
+:AliasService.get_alias_by_name\n("Bloqueados");
+note right
+  <b>2.245s</b>
+  CPU: 16.70%
+  RAM: 35.79 MB
+end note
+:Verifica se IP já está bloqueado;
+
+if (IP em "Autorizados"?) then (sim)
+  :Remove IP de "Autorizados";
+  :Atualiza no pfSense;
+else (não)
+endif
+
+:AliasService.add_addresses_to_alias\n("Bloqueados", IP);
+note right
+  <b>2.233s</b>
+  CPU: 25.00%
+  RAM: 35.85 MB
+end note
+:Adiciona IP ao banco;
+:Atualiza alias no pfSense;
+
+|#Orange|pfSense|
+:pfsense_client.\naplicar_mudancas_firewall_pfsense();
+note right
+  <b>2.326s</b>
+  CPU: 38.90%
+  RAM: 35.85 MB
+  <b>Maior carga!</b>
+end note
+:Valida configurações;
+:Reconstrói tabelas;
+:Aplica regras;
+:Encerra conexões ativas;
+
+|#LightYellow|IncidentService|
+:Atualiza status = "resolved";
+:Cria feedback administrativo;
+
+stop
+
+note bottom
+  <b>⏱️ TEMPO TOTAL: ~14.8 segundos</b>
+  
+  <b>Endpoints Envolvidos:</b>
+  1. GET /api/scanners/zeek/logs
+  2. POST /api/incidents/
+  3. POST /api/incidents/process-batch
+  4. GET /api/devices/aliases-db/Bloqueados
+  5. POST /api/devices/aliases-db/Bloqueados/add-addresses
+  6. POST /api/devices/firewall/apply
+end note
+
+@enduml
+

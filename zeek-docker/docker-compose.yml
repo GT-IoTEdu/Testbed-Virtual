@@ -1,0 +1,18 @@
+services:
+  zeek:
+    build: .
+    container_name: SIMIR_Z
+    network_mode: host
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      ZEEK_INTERFACE: enp0s31f6
+    volumes:
+      - ./logs:/usr/local/zeek/spool/zeek
+      - ./site:/usr/local/zeek/share/zeek/site
+      - /etc/localtime:/etc/localtime:ro
+    command: >
+      sh -c "/usr/local/bin/entrypoint.sh"
+    restart: unless-stopped

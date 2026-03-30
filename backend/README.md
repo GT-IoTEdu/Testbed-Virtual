@@ -69,7 +69,15 @@ python scripts/migrate_add_permission.py
 
 # Criar usuários de teste
 python scripts/create_test_users.py
+
+# Criar aliases e regras iniciais (recomendado)
+python scripts/setup_initial_aliases_and_rules.py
 ```
+
+**Nota:** O script `setup_initial_aliases_and_rules.py` cria automaticamente:
+- Aliases "Autorizados" e "Bloqueados" para cada instituição
+- Regras de firewall básicas no pfSense
+- Sincroniza regras com o banco de dados
 
 ### 3. Iniciar o Servidor
 

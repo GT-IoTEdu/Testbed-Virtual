@@ -1,0 +1,4 @@
+{"ts":1772624405.629766,"level":"Reporter::ERROR","message":"field value missing (DataExfiltration::c$conn$orig_bytes)","location":"/usr/local/zeek/spool/installed-scripts-do-not-touch/site/data-exfiltration-detector.zeek, line 58"}
+{"ts":1772624405.629766,"level":"Reporter::ERROR","message":"field value missing (Beaconing::c$conn$orig_bytes)","location":"/usr/local/zeek/spool/installed-scripts-do-not-touch/site/beaconing-detector.zeek, line 224"}
+{"ts":1772624405.63001,"level":"Reporter::ERROR","message":"field value missing (DataExfiltration::c$conn$orig_bytes)","location":"/usr/local/zeek/spool/installed-scripts-do-not-touch/site/data-exfiltration-detector.zeek, line 58"}
+{"ts":1772624405.63001,"level":"Reporter::ERROR","message":"field value missing (Beaconing::c$conn$orig_bytes)","location":"/usr/local/zeek/spool/installed-scripts-do-not-touch/site/beaconing-detector.zeek, line 224"}

@@ -1,0 +1,243 @@
+====================================================================================================
+LOG DE TESTE - SISTEMA DE DETECÇÃO E BLOQUEIO AUTOMÁTICO
+====================================================================================================
+Iniciado em: 2025-11-05 14:28:21
+====================================================================================================
+
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:28:21.950
+TIPO: DETECTION
+DESCRIÇÃO: Incidente detectado: HTTP Redirect
+INCIDENTE ID: 156
+IP DO DISPOSITIVO: 192.168.59.4
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 10.20%
+  Memória RAM (Processo): 119.52 MB (0.37%)
+  Memória RAM (Sistema): 58.30% usado (13553 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T14:10:25
+  incident_type: HTTP Redirect
+  saved_at: 2025-11-05T14:28:21.930895
+  time_since_detection_seconds: 1076.930895
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:28:22.342
+TIPO: DETECTION
+DESCRIÇÃO: Incidente detectado: Possible DGA Domain
+INCIDENTE ID: 157
+IP DO DISPOSITIVO: 192.168.59.4
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 13.70%
+  Memória RAM (Processo): 120.07 MB (0.37%)
+  Memória RAM (Sistema): 58.30% usado (13553 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T14:13:02
+  incident_type: Possible DGA Domain
+  saved_at: 2025-11-05T14:28:22.342291
+  time_since_detection_seconds: 920.342291
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:30:32.874
+TIPO: DETECTION
+DESCRIÇÃO: Incidente detectado: SQL Injection - Atacante
+INCIDENTE ID: 158
+IP DO DISPOSITIVO: 192.168.59.4
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 20.40%
+  Memória RAM (Processo): 121.41 MB (0.37%)
+  Memória RAM (Sistema): 61.40% usado (12559 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T14:30:16
+  incident_type: SQL Injection - Atacante
+  saved_at: 2025-11-05T14:30:32.874512
+  time_since_detection_seconds: 16.874512
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:30:33.091
+TIPO: DETECTION
+DESCRIÇÃO: Incidente detectado: SQL Injection - Vítima
+INCIDENTE ID: 159
+IP DO DISPOSITIVO: 192.168.59.2
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 10.40%
+  Memória RAM (Processo): 121.42 MB (0.37%)
+  Memória RAM (Sistema): 61.40% usado (12559 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T14:30:16
+  incident_type: SQL Injection - Vítima
+  saved_at: 2025-11-05T14:30:33.091845
+  time_since_detection_seconds: 17.091845
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:30:33.603
+TIPO: BLOCKING_START
+DESCRIÇÃO: Iniciando bloqueio automático para IP 192.168.59.4
+INCIDENTE ID: 158
+IP DO DISPOSITIVO: 192.168.59.4
+ENDPOINT: IncidentService._apply_auto_block
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 83.10%
+  CPU (Sistema): 48.10%
+  Memória RAM (Processo): 121.83 MB (0.37%)
+  Memória RAM (Sistema): 61.30% usado (12563 MB disponíveis de 32497 MB)
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:30:33.903
+TIPO: SYNC
+DESCRIÇÃO: Sincronização com pfSense: ALIAS_UPDATE - Sucesso
+DURAÇÃO: 0.088s (0s 87ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 4.00%
+  Memória RAM (Processo): 121.93 MB (0.38%)
+  Memória RAM (Sistema): 61.30% usado (12564 MB disponíveis de 32497 MB)
+
+METADADOS:
+  sync_type: ALIAS_UPDATE
+  success: True
+  alias_id: 0
+  alias_name: Autorizados
+  endpoint: pfsense_client.atualizar_alias_pfsense
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:30:34.318
+TIPO: SYNC
+DESCRIÇÃO: Sincronização com pfSense: ALIAS_UPDATE - Sucesso
+DURAÇÃO: 0.078s (0s 78ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 35.60%
+  Memória RAM (Processo): 121.90 MB (0.38%)
+  Memória RAM (Sistema): 61.30% usado (12564 MB disponíveis de 32497 MB)
+
+METADADOS:
+  sync_type: ALIAS_UPDATE
+  success: True
+  alias_id: 1
+  alias_name: Bloqueados
+  endpoint: pfsense_client.atualizar_alias_pfsense
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:30:34.632
+TIPO: BLOCKING
+DESCRIÇÃO: Dispositivo bloqueado automaticamente
+INCIDENTE ID: 158
+IP DO DISPOSITIVO: 192.168.59.4
+ENDPOINT: IncidentService._apply_auto_block
+DURAÇÃO: 0.397s (0s 396ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 16.80%
+  CPU (Sistema): 50.00%
+  Memória RAM (Processo): 121.91 MB (0.38%)
+  Memória RAM (Sistema): 61.30% usado (12570 MB disponíveis de 32497 MB)
+
+METADADOS:
+  blocked_at: 2025-11-05T14:30:34
+  feedback_id: 38
+  ttb_seconds: 18.0
+  detected_at: 2025-11-05T14:30:16
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:30:34.836
+TIPO: TIMING_SUMMARY
+DESCRIÇÃO: Resumo de tempos - TtB: 18s
+INCIDENTE ID: 158
+IP DO DISPOSITIVO: 192.168.59.4
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 50.90%
+  Memória RAM (Processo): 121.91 MB (0.38%)
+  Memória RAM (Sistema): 61.30% usado (12566 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T14:30:16
+  blocked_at: 2025-11-05T14:30:34
+  ttb_seconds: 18.0
+  ttb_readable: 18s
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:33:51.237
+TIPO: SYNC
+DESCRIÇÃO: Sincronização com pfSense: ALIAS_UPDATE - Sucesso
+DURAÇÃO: 0.108s (0s 107ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 17.30%
+  Memória RAM (Processo): 122.54 MB (0.38%)
+  Memória RAM (Sistema): 60.80% usado (12742 MB disponíveis de 32497 MB)
+
+METADADOS:
+  sync_type: ALIAS_UPDATE
+  success: True
+  alias_id: 0
+  alias_name: Autorizados
+  endpoint: pfsense_client.atualizar_alias_pfsense
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 14:33:51.597
+TIPO: SYNC
+DESCRIÇÃO: Sincronização com pfSense: ALIAS_UPDATE - Sucesso
+DURAÇÃO: 0.068s (0s 68ms)
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 30.90%
+  Memória RAM (Processo): 122.54 MB (0.38%)
+  Memória RAM (Sistema): 60.80% usado (12739 MB disponíveis de 32497 MB)
+
+METADADOS:
+  sync_type: ALIAS_UPDATE
+  success: True
+  alias_id: 1
+  alias_name: Bloqueados
+  endpoint: pfsense_client.atualizar_alias_pfsense
+====================================================================================================
+
+====================================================================================================
+TIMESTAMP: 2025-11-05 15:51:37.085
+TIPO: DETECTION
+DESCRIÇÃO: Incidente detectado: Security Notice: CaptureLoss::Too_Little_Traffic
+INCIDENTE ID: 160
+IP DO DISPOSITIVO: 192.168.100.1
+
+MÉTRICAS DO SISTEMA:
+  CPU (Processo): 0.00%
+  CPU (Sistema): 21.40%
+  Memória RAM (Processo): 109.00 MB (0.34%)
+  Memória RAM (Sistema): 61.80% usado (12424 MB disponíveis de 32497 MB)
+
+METADADOS:
+  detected_at: 2025-11-05T15:45:02
+  incident_type: Security Notice: CaptureLoss::Too_Little_Traffic
+  saved_at: 2025-11-05T15:51:36.875088
+  time_since_detection_seconds: 394.875088
+====================================================================================================

@@ -2,7 +2,7 @@
 
 ## **📋 Visão Geral**
 
-O sistema implementa dois níveis de permissão para usuários:
+O sistema implementa **três níveis de permissão** para usuários:
 
 ### **👤 Usuário Comum (USER)**
 - **Pode**: Gerenciar apenas seus próprios dispositivos
@@ -14,6 +14,13 @@ O sistema implementa dois níveis de permissão para usuários:
 - **Pode**: Ver atribuições de qualquer usuário
 - **Exemplo**: `gestor.teste@unipampa.edu.br` (ID: 2)
 
+### **👑 Administrador (ADMIN)**
+- **Pode**: Gerenciar permissões de todos os usuários
+- **Pode**: Promover usuários para MANAGER ou ADMIN
+- **Pode**: Rebaixar MANAGERs para USER
+- **Pode**: Fazer login com email e senha provisória
+- **Exemplo**: `admin@iotedu.local` (configurado via ADMIN_ACCESS)
+
 ---
 
 ## **👥 Usuários de Teste Cadastrados**
@@ -22,6 +29,7 @@ O sistema implementa dois níveis de permissão para usuários:
 |----|-------|------|-----------|-------------|
 | 1 | `usuario.teste@unipampa.edu.br` | Usuário Teste | USER | UNIPAMPA |
 | 2 | `gestor.teste@unipampa.edu.br` | Gestor Teste | MANAGER | UNIPAMPA |
+| 3 | `admin@iotedu.local` | Administrador do Sistema | ADMIN | IoT-EDU |
 
 ---
 
@@ -221,6 +229,222 @@ curl -X DELETE "http://127.0.0.1:8000/api/devices/assignments/2/1?current_user_i
 ```
 
 ---
+
+## **👑 Endpoints Administrativos**
+
+### **1. 🔐 Login Administrativo**
+
+**Endpoint**: `POST /api/admin/login`
+
+**Descrição**: Permite login administrativo usando email e senha provisória.
+
+**Exemplo**:
+```bash
+curl -X POST http://127.0.0.1:8000/api/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@iotedu.local",
+    "password": "admin123"
+  }'
+```
+
+### **2. 👥 Gerenciar Usuários**
+
+**Endpoint**: `GET /api/admin/users`
+
+**Descrição**: Lista todos os usuários do sistema (apenas administradores).
+
+**Exemplo**:
+```bash
+curl "http://127.0.0.1:8000/api/admin/users"
+```
+
+### **3. 🔄 Alterar Permissão de Usuário**
+
+**Endpoint**: `PUT /api/admin/users/{user_id}/permission`
+
+**Descrição**: Altera a permissão de um usuário (apenas administradores).
+
+**Exemplo - Promover usuário para gestor**:
+```bash
+curl -X PUT http://127.0.0.1:8000/api/admin/users/1/permission \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "new_permission": "MANAGER"
+  }'
+```
+
+**Exemplo - Rebaixar gestor para usuário**:
+```bash
+curl -X PUT http://127.0.0.1:8000/api/admin/users/2/permission \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 2,
+    "new_permission": "USER"
+  }'
+```
+
+### **4. 📊 Estatísticas de Usuários**
+
+**Endpoint**: `GET /api/admin/users/stats`
+
+**Descrição**: Retorna estatísticas dos usuários por permissão.
+
+**Exemplo**:
+```bash
+curl "http://127.0.0.1:8000/api/admin/users/stats"
+```
+
+### **5. ℹ️ Informações do Administrador**
+
+**Endpoint**: `GET /api/admin/info`
+
+**Descrição**: Retorna informações sobre o acesso administrativo.
+
+**Exemplo**:
+```bash
+curl "http://127.0.0.1:8000/api/admin/info"
+```
+
+### **6. ✅ Validar Configuração**
+
+**Endpoint**: `GET /api/admin/validate-config`
+
+**Descrição**: Valida se as configurações administrativas estão corretas.
+
+**Exemplo**:
+```bash
+curl "http://127.0.0.1:8000/api/admin/validate-config"
+```
+
+---
+
+## **⚙️ Configuração do Sistema Administrativo**
+
+### **Variáveis de Ambiente**
+
+Adicione ao arquivo `.env`:
+
+```env
+# Configurações de acesso administrativo
+ADMIN_ACCESS=admin@iotedu.local
+ADMIN_PASSWORD=admin123
+```
+
+### **Scripts de Configuração**
+
+```bash
+# 1. Executar migração para adicionar perfil ADMIN
+python scripts/migrate_add_admin_permission.py
+
+# 2. Criar usuário administrador inicial
+python scripts/create_initial_admin.py
+```
+
+---
+
+## **🔒 Regras de Segurança**
+
+### **Administradores**
+- ✅ Podem promover qualquer usuário para MANAGER ou ADMIN
+- ✅ Podem rebaixar qualquer MANAGER para USER
+- ❌ **NÃO podem** alterar suas próprias permissões
+- ❌ **NÃO podem** alterar permissões de outros administradores
+- ✅ Fazem login com email e senha provisória (configurável)
+
+### **Gestores**
+- ✅ Podem gerenciar todos os dispositivos
+- ✅ Podem ver atribuições de qualquer usuário
+- ❌ **NÃO podem** alterar permissões de usuários
+- ✅ Fazem login via CAFe/Google OAuth2
+
+### **Usuários**
+- ✅ Podem gerenciar apenas seus próprios dispositivos
+- ❌ **NÃO podem** ver dispositivos de outros usuários
+- ❌ **NÃO podem** alterar permissões
+- ✅ Fazem login via CAFe/Google OAuth2
+
+---
+
+## **🧪 Testes de Permissões Administrativas**
+
+### **Cenário 1: Login Administrativo**
+
+```bash
+# Login com credenciais corretas
+curl -X POST http://127.0.0.1:8000/api/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@iotedu.local",
+    "password": "admin123"
+  }'
+
+# Login com credenciais incorretas (deve falhar)
+curl -X POST http://127.0.0.1:8000/api/admin/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "admin@iotedu.local",
+    "password": "senha_errada"
+  }'
+```
+
+### **Cenário 2: Gerenciamento de Usuários**
+
+```bash
+# 1. Listar todos os usuários
+curl "http://127.0.0.1:8000/api/admin/users"
+
+# 2. Promover usuário para gestor
+curl -X PUT http://127.0.0.1:8000/api/admin/users/1/permission \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": 1,
+    "new_permission": "MANAGER"
+  }'
+
+# 3. Verificar estatísticas
+curl "http://127.0.0.1:8000/api/admin/users/stats"
+```
+
+### **Cenário 3: Validação de Configuração**
+
+```bash
+# Validar configuração administrativa
+curl "http://127.0.0.1:8000/api/admin/validate-config"
+
+# Obter informações do administrador
+curl "http://127.0.0.1:8000/api/admin/info"
+```
+
+---
+
+## **📋 Resumo das Permissões**
+
+| Ação | USER | MANAGER | ADMIN |
+|------|------|---------|-------|
+| Gerenciar próprios dispositivos | ✅ | ✅ | ✅ |
+| Gerenciar dispositivos de outros | ❌ | ✅ | ✅ |
+| Ver atribuições de outros | ❌ | ✅ | ✅ |
+| Alterar permissões de usuários | ❌ | ❌ | ✅ |
+| Promover usuários | ❌ | ❌ | ✅ |
+| Rebaixar usuários | ❌ | ❌ | ✅ |
+| Login via CAFe/Google | ✅ | ✅ | ✅ |
+| Login administrativo | ❌ | ❌ | ✅ |
+
+---
+
+## **🚀 Próximos Passos**
+
+1. **Configure** as variáveis `ADMIN_ACCESS` e `ADMIN_PASSWORD` no arquivo `.env`
+2. **Execute** os scripts de migração e criação do administrador
+3. **Teste** o login administrativo
+4. **Configure** outros administradores conforme necessário
+5. **Monitore** o sistema usando os endpoints administrativos
+
+---
+
+**🎉 O sistema agora possui controle completo de permissões com três níveis de acesso!**
 
 ## **📊 Respostas de Erro Comuns**
 
