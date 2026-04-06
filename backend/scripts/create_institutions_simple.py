@@ -114,8 +114,8 @@ def insert_sample_institution():
             """
             
             values = (
-                'Unipampa', 'Alegrete', 'http://192.168.56.101/api/v2/', '929ca6e1a3ed6ab30f531dc6421dec7a',
-                'http://host.docker.internal:8001', 'a8f4c2d9-1c9b-4b6f-9d6e-aaa111bbb222', '172.20.0.10', '172.20.0.254', 1
+                'Unipampa', 'Alegrete', 'http://192.168.56.102/api/v2/', '929ca6e1a3ed6ab30f531dc6421dec7a',
+                'http://host.docker.internal:8001', 'a8f4c2d9-1c9b-4b6f-9d6e-aaa111bbb222', '192.168.56.10', '192.168.56.50', 1
             )
             cursor.execute(insert_sql, values)
             connection.commit()

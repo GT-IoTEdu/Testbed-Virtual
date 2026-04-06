@@ -210,7 +210,7 @@ async def stream_zeek_alerts(
     try:
         print("🔵 STEP 2: Entering try block")
 
-        # Resolve institution_id if not provided
+
         if not institution_id and user_id:
             print(f"🔵 STEP 2a: Resolving institution_id from user_id={user_id}")
             try:
@@ -223,7 +223,6 @@ async def stream_zeek_alerts(
                 print(f"🔴 ERROR resolving institution: {e}")
                 logger.warning("Erro ao buscar configuração do usuário %s: %s", user_id, e)
 
-        # Check if we have institution_id
         if not institution_id:
             print("🔴 ERROR: No institution_id after resolution")
             raise HTTPException(
@@ -243,7 +242,7 @@ async def stream_zeek_alerts(
                 detail="Zeek não configurado para esta instituição. Configure zeek_base_url e zeek_key no cadastro da instituição.",
             )
 
-        # Build SSE URL
+
         print("🔵 STEP 5: Building SSE URL")
         sse_url = service.get_sse_url()
         print(f"🔵 SSE URL built: {sse_url}")
@@ -252,12 +251,11 @@ async def stream_zeek_alerts(
             print("🔴 ERROR: Failed to build SSE URL")
             raise HTTPException(status_code=500, detail="Erro ao construir URL do SSE do Zeek")
 
-        # Mask API key for logging
         masked_url = sse_url.replace(service.api_key, "***") if service.api_key else sse_url
         print(f"🔵 STEP 6: About to connect to: {masked_url}")
         logger.warning(f"🌐 About to connect to Zeek SSE: {masked_url}")
 
-        # Define the event generator
+
         def event_generator():
             print("🟢 STEP 7: INSIDE event_generator!")  # This should print if we get here
             print("🟢 Event generator started")
@@ -271,7 +269,7 @@ async def stream_zeek_alerts(
                 response = requests.get(
                     sse_url,
                     stream=True,
-                    timeout=30,
+                    timeout=None,
                     headers={"Accept": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive"},
                 )
                 print(f"🟢 STEP 10: Request made, status: {response.status_code}")

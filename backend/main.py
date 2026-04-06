@@ -17,6 +17,9 @@ import config
 import logging
 
 logger = logging.getLogger(__name__)
+from dotenv import load_dotenv
+load_dotenv()
+
 
 # Carregar variáveis de ambiente do arquivo .env
 load_dotenv()
@@ -30,7 +33,7 @@ app = FastAPI(
 # Configuração CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["localhost","127.0.0.1","iot-edu.cafeexpresso.rnp.br","172.20.0.20","172.20.0.30","172.20.0.40","http://localhost:3000"],  # Em produção, especifique os domínios permitidos
+    allow_origins=os.getenv("ALLOWED_HOSTS"),  # Em produção, especifique os domínios permitidos
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

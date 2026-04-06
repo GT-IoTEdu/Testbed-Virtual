@@ -26,7 +26,7 @@ SID_IN_MESSAGE_PATTERN = re.compile(r'\[(\d+):(\d+):(\d+)\]')
 # =====================================================
 LOG_FILE_SURICATA = "/var/log/suricata/fast.log"
 LOG_FILE_SNORT = "/var/log/snort/alert"
-LOG_FILE_ZEEK = "/home/angelog/Downloads/API-c587d76ca1aeb204f957a8d93bf2084896bba5dd/logs_test/notice.log"  # Adicionado Zeek
+LOG_FILE_ZEEK = "/home/angelog/Testbed-Virtual/logs/notice.log"  # Adicionado Zeek
 
 # =====================================================
 # API KEYS
