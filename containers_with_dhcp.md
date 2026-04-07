@@ -26,8 +26,8 @@ sudo ip link set tap0 up
 ### 4. Instalar pacotes necessários (Exemplo com container novo, vazio)
 ```
 docker run -d --name ubuntu-tmp ubuntu:24.04 sleep infinity
-docker exec ubuntu-tmp /bin/bash apt update
-docker exec ubuntu-tmp /bin/bash apt install -y isc-dhcp-client iproute2 iputils-ping
+docker exec ubuntu-tmp apt update
+docker exec ubuntu-tmp apt install -y isc-dhcp-client iproute2 iputils-ping
 docker commit ubuntu-tmp ubuntu-dhcp
 docker rm -f ubuntu-tmp
 ```
