@@ -32,10 +32,12 @@ docker commit ubuntu-tmp ubuntu-dhcp
 docker rm -f ubuntu-tmp
 ```
 > [!IMPORTANT]
-> O que foi feito aqui foi a instalação dos pacotes em um container zerado, depois as modificações foram commitadas em uma nova imagem, e a imagem temporária foi removida, passando a só usar a imagem com os pacotes embutidos.
+> O que foi feito aqui foi a instalação dos pacotes em um container zerado `ubuntu-tmp`, depois as modificações foram commitadas em uma nova imagem `ubuntu-dhcp`, e a imagem temporária foi removida, passando a só usar a imagem com os pacotes embutidos.
 
 ### 5. Subir container SEM rede mas com privilégios no contexto de rede
+```
 docker run -d --name ubuntu-dhcp-01 --hostname ubuntu-dhcp-01 --network none --cap-add NET_ADMIN --cap-add NET_RAW ubuntu-dhcp:latest sleep infinity
+```
 
 ### 6. Criar interface virtual para plugar a tun0 com o namespace do container
 ```
