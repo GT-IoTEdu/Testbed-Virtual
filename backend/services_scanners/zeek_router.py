@@ -203,85 +203,84 @@ async def stream_zeek_alerts(
     institution_id: Optional[int] = Query(None, description="ID da instituição"),
 ):
     """Endpoint SSE para receber alertas do Zeek em tempo real (proxy do servidor Zeek)."""
-    print("🔵 STEP 1: SSE endpoint called")
-    print(f"🔵 Received params: user_id={user_id}, institution_id={institution_id}")
+
+
     logger.warning(f"🔵 SSE endpoint accessed with user_id={user_id}, institution_id={institution_id}")
 
     try:
-        print("🔵 STEP 2: Entering try block")
+
 
 
         if not institution_id and user_id:
-            print(f"🔵 STEP 2a: Resolving institution_id from user_id={user_id}")
+
             try:
                 user_config = InstitutionConfigService.get_user_institution_config(user_id=user_id)
                 if user_config:
                     institution_id = user_config.get("institution_id")
-                    print(f"🔵 STEP 2b: Resolved institution_id={institution_id}")
+
                     logger.warning(f"Resolved institution_id {institution_id} from user_id {user_id}")
             except Exception as e:
-                print(f"🔴 ERROR resolving institution: {e}")
+
                 logger.warning("Erro ao buscar configuração do usuário %s: %s", user_id, e)
 
         if not institution_id:
-            print("🔴 ERROR: No institution_id after resolution")
+
             raise HTTPException(
                 status_code=400,
                 detail="É necessário fornecer institution_id ou user_id para identificar a instituição.",
             )
 
-        print(f"🔵 STEP 3: Creating ZeekService with institution_id={institution_id}")
+
         service = ZeekService(user_id=user_id, institution_id=institution_id)
 
         # Check Zeek configuration
-        print(f"🔵 STEP 4: Checking Zeek config - base_url: {service.base_url}, has_api_key: {bool(service.api_key)}")
+
         if not service.base_url or not service.api_key:
-            print(f"🔴 ERROR: Zeek not configured - base_url: {service.base_url}, api_key present: {bool(service.api_key)}")
+
             raise HTTPException(
                 status_code=404,
                 detail="Zeek não configurado para esta instituição. Configure zeek_base_url e zeek_key no cadastro da instituição.",
             )
 
 
-        print("🔵 STEP 5: Building SSE URL")
+
         sse_url = service.get_sse_url()
-        print(f"🔵 SSE URL built: {sse_url}")
+
 
         if not sse_url:
-            print("🔴 ERROR: Failed to build SSE URL")
+
             raise HTTPException(status_code=500, detail="Erro ao construir URL do SSE do Zeek")
 
         masked_url = sse_url.replace(service.api_key, "***") if service.api_key else sse_url
-        print(f"🔵 STEP 6: About to connect to: {masked_url}")
+
         logger.warning(f"🌐 About to connect to Zeek SSE: {masked_url}")
 
 
         def event_generator():
-            print("🟢 STEP 7: INSIDE event_generator!")  # This should print if we get here
-            print("🟢 Event generator started")
+
             logger.warning("🟢 Event generator function executing")
 
             try:
-                print("🟢 STEP 8: Inside event_generator try block")
+
                 yield f"data: {json.dumps({'type': 'connected', 'message': 'Conectando ao stream de alertas do Zeek'})}\n\n"
 
-                print(f"🟢 STEP 9: Making request to: {masked_url}")
+
                 response = requests.get(
                     sse_url,
                     stream=True,
                     timeout=None,
                     headers={"Accept": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive"},
                 )
-                print(f"🟢 STEP 10: Request made, status: {response.status_code}")
+
 
                 response.raise_for_status()
-                print("🟢 STEP 11: Response OK")
+
 
                 yield f"data: {json.dumps({'type': 'connected', 'message': 'Conectado ao stream de alertas do Zeek'})}\n\n"
 
                 # Process events
                 event_count = 0
-                print("🟢 STEP 12: Starting to process events")
+
 
                 for line in response.iter_lines(decode_unicode=True):
                     if not line:
@@ -295,12 +294,24 @@ async def stream_zeek_alerts(
 
                         try:
                             alert_dict = json.loads(json_str)
+                            message = alert_dict.get("message", alert_dict.get("msg", ""))
+                            note = alert_dict.get("note", "")
+
+
+                            if "Framework Ready" in str(message) or "Framework Ready" in str(note):
+                                logger.debug("Ignorando evento de sistema Zeek: %s", message)
+                                continue
+
+
+                            src_ip = alert_dict.get("src", alert_dict.get("id_orig_h", ""))
+                            if not src_ip and not alert_dict.get("id.orig_h"):
+                                continue
                             alert = service._normalize_alert(alert_dict)
                             alert_id = _save_zeek_alert(institution_id, alert)
 
                             if alert_id:
                                 event_count += 1
-                                print(f"🟢 Saved alert #{event_count} with ID {alert_id}")
+
 
                                 normalized_event = {
                                     "type": "alert",
@@ -321,7 +332,7 @@ async def stream_zeek_alerts(
             finally:
                 print(f"🟢 Event generator finished. Processed {event_count if 'event_count' in locals() else 0} events")
 
-        print("🔵 STEP 13: Returning StreamingResponse with event_generator")
+
         return StreamingResponse(
             event_generator(),
             media_type="text/event-stream",
