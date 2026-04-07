@@ -86,10 +86,18 @@ docker network create tap_test
 
  
 
+# Verifique o ID
+docker network ls
+
+# Verifique o nome da interface no hospedeiro com base no id fornecido
+ip a
+
 
 # Faça o tap:
 sudo tc filter add dev vboxnet0 parent ffff: protocol all u32 match u8 0 0 action mirred egress mirror dev br-234ef4b18abd
 
+# No Docker compose mude o nome da interface na linha:
+      ZEEK_INTERFACE: br-234ef4b18abd
  
 ```
 
