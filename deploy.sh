@@ -31,16 +31,14 @@ cp backend/.env frontend/
 # Stop existing containers
 docker compose down
 
-# Start first service (server_alvo) in background
-docker compose up --build --no-attach server_alvo &
-DOCKER_PID=$!
-
-# Wait a moment for docker to initialize
-sleep 2
-
-# Open second terminal for uvicorn
 echo "Opening terminal for uvicorn server..."
 open_terminal "cd $(pwd)/server_sse/ && uvicorn server_sse:app --host 0.0.0.0 --port 8001 --reload" "Uvicorn Server"
+docker compose up --build
+
+
+
+# Open second terminal for uvicorn
+
 
 # Wait for docker process
-wait $DOCKER_PID
+

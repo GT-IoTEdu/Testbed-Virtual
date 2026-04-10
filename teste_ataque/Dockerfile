@@ -6,12 +6,13 @@ RUN apt-get update && apt-get install -y \
     wget \
     python3 \
     python3-pip \
+    isc-dhcp-client\
+    iproute2\
+    iputils-ping\
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --break-system-packages slowloris
 
 
-COPY  entrypoint.sh /tmp/entrypoint.sh
-RUN chmod +x /tmp/entrypoint.sh
-
-ENTRYPOINT ["/tmp/entrypoint.sh"]
+COPY  entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh

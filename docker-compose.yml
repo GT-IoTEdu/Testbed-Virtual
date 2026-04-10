@@ -9,8 +9,6 @@ services:
     ports:
       - "3306:3306"
     restart: unless-stopped
-    networks:
-      - default
 
   backend:
     build: ./backend
@@ -22,8 +20,7 @@ services:
     depends_on:
       - db
     restart: unless-stopped
-    networks:
-      - default
+
 
   frontend:
     build: ./frontend
@@ -35,43 +32,15 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
-    networks:
-      - default
 
-  ataque:
-    build: ./teste_ataque
-    env_file: backend/.env
-    networks:
-      tap_test:
-        ipv4_address: 172.19.0.13
-      default:
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      - backend
-      - server_alvo
-      - zeek-monitor
-    restart: unless-stopped
 
-  server_alvo:
-    build: ./target-server
-    logging:
-      driver: none
-    env_file: backend/.env
-    networks:
-      tap_test:
-        ipv4_address: 172.19.0.12
-      default:
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
 
   zeek-monitor:
     build: ./zeek-docker
     network_mode: host
     privileged: true
     environment:
-      ZEEK_INTERFACE: br-234ef4b18abd
+      ZEEK_INTERFACE:  bridge-tap
     cap_add:
       - NET_RAW
       - NET_ADMIN
@@ -81,8 +50,3 @@ services:
       - /etc/localtime:/etc/localtime:ro
     restart: unless-stopped
 
-networks:
-  tap_test:
-    external: true
-  default:
-    driver: bridge

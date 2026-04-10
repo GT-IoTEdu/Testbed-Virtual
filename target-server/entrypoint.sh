@@ -1,7 +1,10 @@
 #!/bin/bash
 
 echo "[SIMIR Target Server] Starting services..."
-
+ip link set lo up
+ip link set veth-cont-01 name eth0
+ip link set eth0 up
+dhcpcd -d eth0
 # Inicia SSH
 echo "[+] Starting SSH server on port 22..."
 /usr/sbin/sshd

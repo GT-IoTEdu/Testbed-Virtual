@@ -268,7 +268,7 @@ async def stream_zeek_alerts(
                 response = requests.get(
                     sse_url,
                     stream=True,
-                    timeout=None,
+                    timeout=none,
                     headers={"Accept": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive"},
                 )
 

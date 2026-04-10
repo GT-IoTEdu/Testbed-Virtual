@@ -1,5 +1,9 @@
 FROM nginx:alpine
 
+RUN apk add --no-cache \
+    dhcpcd \
+    iproute2 \
+    iputils
 # Instala ferramentas adicionais para SSH e FTP (alvos de outros ataques)
 RUN apk add --no-cache openssh vsftpd bash
 
@@ -21,4 +25,3 @@ RUN chmod +x /entrypoint.sh
 
 EXPOSE 80 22 21
 
-ENTRYPOINT ["/entrypoint.sh"]
